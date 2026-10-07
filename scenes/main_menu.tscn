@@ -1,0 +1,142 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/main_menu.gd" id="1_menu"]
+
+[node name="MainMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_menu")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.1, 0.14, 0.2, 1)
+
+[node name="MenuCenter" type="CenterContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MenuCenter"]
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="Title" type="Label" parent="MenuCenter/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 64
+text = "PEAST"
+horizontal_alignment = 1
+
+[node name="Spacer" type="Control" parent="MenuCenter/VBoxContainer"]
+custom_minimum_size = Vector2(0, 20)
+layout_mode = 2
+
+[node name="PlayButton" type="Button" parent="MenuCenter/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(220, 48)
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "Play Game"
+
+[node name="InventoryButton" type="Button" parent="MenuCenter/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(220, 48)
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "Inventory"
+
+[node name="QuitButton" type="Button" parent="MenuCenter/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(220, 48)
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "Quit"
+
+[node name="InventoryPanel" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 40.0
+offset_top = 30.0
+offset_right = -40.0
+offset_bottom = -30.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Margin" type="MarginContainer" parent="InventoryPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 12
+
+[node name="VBox" type="VBoxContainer" parent="InventoryPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="InventoryPanel/Margin/VBox"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="InventoryPanel/Margin/VBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 28
+text = "Inventory Pet"
+
+[node name="CloseButton" type="Button" parent="InventoryPanel/Margin/VBox/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(100, 36)
+layout_mode = 2
+text = "Đóng"
+
+[node name="TeamLabel" type="Label" parent="InventoryPanel/Margin/VBox"]
+layout_mode = 2
+text = "Đội hình mang vào trận (phím 1 / 2 / 3)"
+
+[node name="TeamRow" type="HBoxContainer" parent="InventoryPanel/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="CollectionLabel" type="Label" parent="InventoryPanel/Margin/VBox"]
+layout_mode = 2
+text = "Tất cả Pet đã bắt — bấm vào Pet để thêm / bỏ khỏi đội"
+
+[node name="Scroll" type="ScrollContainer" parent="InventoryPanel/Margin/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="CollectionGrid" type="GridContainer" parent="InventoryPanel/Margin/VBox/Scroll"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 8
+columns = 6
+
+[node name="InfoLabel" type="Label" parent="InventoryPanel/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+modulate = Color(1, 0.85, 0.4, 1)
+
+[node name="ReleaseConfirm" type="ConfirmationDialog" parent="."]
+unique_name_in_owner = true
+title = "Thả Pet"
+size = Vector2i(360, 110)
+ok_button_text = "Thả"
+cancel_button_text = "Hủy"

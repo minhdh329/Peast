@@ -1,0 +1,71 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/debug_panel.gd" id="1_debug_panel"]
+[ext_resource type="PackedScene" path="res://scenes/monster.tscn" id="2_monster"]
+
+[node name="DebugPanel" type="CanvasLayer"]
+layer = 10
+script = ExtResource("1_debug_panel")
+monster_scene = ExtResource("2_monster")
+monster_spawn_position = Vector2(580, 462)
+
+[node name="ToggleButton" type="Button" parent="."]
+offset_left = 16.0
+offset_top = 56.0
+offset_right = 126.0
+offset_bottom = 82.0
+focus_mode = 0
+toggle_mode = true
+text = "Debug (F1)"
+
+[node name="Panel" type="PanelContainer" parent="."]
+visible = false
+offset_left = 16.0
+offset_top = 88.0
+offset_right = 250.0
+offset_bottom = 242.0
+
+[node name="Margin" type="MarginContainer" parent="Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 8
+
+[node name="VBox" type="VBoxContainer" parent="Panel/Margin"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Panel/Margin/VBox"]
+layout_mode = 2
+text = "DEBUG"
+
+[node name="Status" type="Label" parent="Panel/Margin/VBox"]
+layout_mode = 2
+text = "Monster: ready"
+
+[node name="RespawnButton" type="Button" parent="Panel/Margin/VBox"]
+custom_minimum_size = Vector2(208, 0)
+layout_mode = 2
+focus_mode = 0
+text = "Respawn Monster"
+
+[node name="RespawnPlayerButton" type="Button" parent="Panel/Margin/VBox"]
+custom_minimum_size = Vector2(208, 0)
+layout_mode = 2
+focus_mode = 0
+text = "Respawn Player"
+
+[node name="ResetProgressButton" type="Button" parent="Panel/Margin/VBox"]
+custom_minimum_size = Vector2(208, 0)
+layout_mode = 2
+focus_mode = 0
+theme_override_colors/font_color = Color(1, 0.45, 0.45, 1)
+text = "Reset Progress"
+
+[node name="ResetConfirm" type="ConfirmationDialog" parent="."]
+title = "Reset Progress"
+size = Vector2i(360, 120)
+dialog_text = "Xóa toàn bộ Pet đã bắt và đội hình?
+Không thể hoàn tác."
+ok_button_text = "Reset"
+cancel_button_text = "Hủy"

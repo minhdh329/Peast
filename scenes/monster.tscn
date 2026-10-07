@@ -1,0 +1,61 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/monster.gd" id="1_monster"]
+[ext_resource type="Texture2D" path="res://assets/monster.png" id="2_monster"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_monster"]
+radius = 18.0
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_detection"]
+radius = 220.0
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_health_background"]
+bg_color = Color(0.12, 0.15, 0.16, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_health_fill"]
+bg_color = Color(0.38, 0.82, 0.47, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[node name="Monster" type="CharacterBody2D"]
+script = ExtResource("1_monster")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+scale = Vector2(2, 2)
+texture = ExtResource("2_monster")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_monster")
+
+[node name="DetectionZone" type="Area2D" parent="."]
+collision_layer = 0
+collision_mask = 1
+monitorable = false
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="DetectionZone"]
+shape = SubResource("CircleShape2D_detection")
+
+[node name="WallCheck" type="RayCast2D" parent="."]
+target_position = Vector2(26, 0)
+
+[node name="LedgeCheck" type="RayCast2D" parent="."]
+position = Vector2(22, 0)
+target_position = Vector2(0, 36)
+
+[node name="HealthBar" type="ProgressBar" parent="."]
+z_index = 2
+offset_left = -22.0
+offset_top = 22.0
+offset_right = 22.0
+offset_bottom = 28.0
+mouse_filter = 2
+show_percentage = false
+value = 30.0
+theme_override_styles/background = SubResource("StyleBoxFlat_health_background")
+theme_override_styles/fill = SubResource("StyleBoxFlat_health_fill")

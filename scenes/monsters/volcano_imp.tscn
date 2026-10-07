@@ -1,0 +1,11 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/monster.tscn" id="1_base"]
+
+[node name="VolcanoImp" instance=ExtResource("1_base")]
+monster_name = "Quỷ lửa"
+attack_style = "Ranged"
+max_hp = 100
+attack_damage = 9
+movement_speed = 100.0
+patrol_speed = 45.0

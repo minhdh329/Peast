@@ -1,0 +1,16 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/monster.tscn" id="1_base"]
+[ext_resource type="Texture2D" path="res://assets/monsters/jelly.png" id="2_tex"]
+
+[node name="OceanJelly" instance=ExtResource("1_base")]
+monster_name = "Sứa biển"
+movement_mode = "Swim"
+attack_style = "Ranged"
+max_hp = 70
+attack_damage = 6
+movement_speed = 60.0
+patrol_speed = 25.0
+
+[node name="Sprite2D" parent="." index="0"]
+texture = ExtResource("2_tex")

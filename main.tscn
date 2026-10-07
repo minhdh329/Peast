@@ -1,0 +1,172 @@
+[gd_scene load_steps=18 format=3]
+
+[ext_resource type="Script" path="res://scripts/player.gd" id="1_player"]
+[ext_resource type="Texture2D" path="res://assets/player_sheet.png" id="2_player"]
+[ext_resource type="PackedScene" path="res://scenes/capture_ball.tscn" id="3_capture_ball"]
+[ext_resource type="PackedScene" path="res://scenes/debug_panel.tscn" id="5_debug_panel"]
+[ext_resource type="PackedScene" path="res://scenes/pet.tscn" id="6_pet"]
+[ext_resource type="Texture2D" path="res://assets/sword.svg" id="7_sword"]
+[ext_resource type="Script" path="res://scripts/procedural_terrain.gd" id="8_terrain"]
+[ext_resource type="PackedScene" path="res://scenes/hotbar.tscn" id="9_hotbar"]
+
+[sub_resource type="CapsuleShape2D" id="CapsuleShape2D_player"]
+radius = 11.0
+height = 44.0
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_melee_hitbox"]
+size = Vector2(38, 26)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_player_health_background"]
+bg_color = Color(0.12, 0.15, 0.16, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_player_health_fill"]
+bg_color = Color(0.88, 0.31, 0.33, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="Animation" id="Animation_idle"]
+resource_name = "idle"
+length = 0.8
+loop_mode = 1
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Sprite2D:frame")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.4),
+"transitions": PackedFloat32Array(1, 1),
+"update": 1,
+"values": [0, 1]
+}
+
+[sub_resource type="Animation" id="Animation_run"]
+resource_name = "run"
+length = 0.48
+loop_mode = 1
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Sprite2D:frame")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.12, 0.24, 0.36),
+"transitions": PackedFloat32Array(1, 1, 1, 1),
+"update": 1,
+"values": [4, 5, 6, 7]
+}
+
+[sub_resource type="Animation" id="Animation_jump"]
+resource_name = "jump"
+length = 0.2
+loop_mode = 1
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Sprite2D:frame")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 1,
+"values": [8]
+}
+
+[sub_resource type="Animation" id="Animation_swim"]
+resource_name = "swim"
+length = 0.8
+loop_mode = 1
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Sprite2D:frame")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.2, 0.4, 0.6),
+"transitions": PackedFloat32Array(1, 1, 1, 1),
+"update": 1,
+"values": [12, 13, 14, 15]
+}
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_player"]
+_data = {
+"idle": SubResource("Animation_idle"),
+"jump": SubResource("Animation_jump"),
+"run": SubResource("Animation_run"),
+"swim": SubResource("Animation_swim")
+}
+
+[node name="Main" type="Node2D"]
+
+[node name="Player" type="CharacterBody2D" parent="."]
+position = Vector2(180, 350)
+script = ExtResource("1_player")
+capture_ball_scene = ExtResource("3_capture_ball")
+pet_scene = ExtResource("6_pet")
+
+[node name="Sprite2D" type="Sprite2D" parent="Player"]
+scale = Vector2(2, 2)
+texture = ExtResource("2_player")
+hframes = 4
+vframes = 4
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="Player"]
+libraries = {
+"": SubResource("AnimationLibrary_player")
+}
+autoplay = "idle"
+
+[node name="SwordPivot" type="Node2D" parent="Player"]
+position = Vector2(-2, -6)
+visible = false
+
+[node name="SwordSprite" type="Sprite2D" parent="Player/SwordPivot"]
+position = Vector2(-2, -8)
+texture = ExtResource("7_sword")
+centered = false
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Player"]
+shape = SubResource("CapsuleShape2D_player")
+
+[node name="HealthBar" type="ProgressBar" parent="Player"]
+z_index = 2
+offset_left = -22.0
+offset_top = 22.0
+offset_right = 22.0
+offset_bottom = 28.0
+mouse_filter = 2
+show_percentage = false
+value = 100.0
+theme_override_styles/background = SubResource("StyleBoxFlat_player_health_background")
+theme_override_styles/fill = SubResource("StyleBoxFlat_player_health_fill")
+
+[node name="MeleeHitbox" type="Area2D" parent="Player"]
+position = Vector2(28, -4)
+collision_layer = 0
+collision_mask = 1
+monitoring = false
+monitorable = false
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Player/MeleeHitbox"]
+disabled = true
+shape = SubResource("RectangleShape2D_melee_hitbox")
+
+[node name="Terrain" type="TileMapLayer" parent="."]
+script = ExtResource("8_terrain")
+generation_seed = 20261002
+map_width_cells = 30
+floor_row = 15
+
+[node name="DebugPanel" parent="." instance=ExtResource("5_debug_panel")]
+
+[node name="HotBar" parent="." instance=ExtResource("9_hotbar")]
