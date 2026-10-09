@@ -6,6 +6,7 @@
 [node name="ForestSlime" instance=ExtResource("1_base")]
 monster_name = "Slime rừng"
 attack_style = "Melee"
+split_on_death = true
 max_hp = 60
 attack_damage = 5
 movement_speed = 70.0

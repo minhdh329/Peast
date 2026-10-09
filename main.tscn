@@ -1,4 +1,4 @@
-[gd_scene load_steps=18 format=3]
+[gd_scene load_steps=19 format=3]
 
 [ext_resource type="Script" path="res://scripts/player.gd" id="1_player"]
 [ext_resource type="Texture2D" path="res://assets/player_sheet.png" id="2_player"]
@@ -8,6 +8,7 @@
 [ext_resource type="Texture2D" path="res://assets/sword.svg" id="7_sword"]
 [ext_resource type="Script" path="res://scripts/procedural_terrain.gd" id="8_terrain"]
 [ext_resource type="PackedScene" path="res://scenes/hotbar.tscn" id="9_hotbar"]
+[ext_resource type="Script" path="res://scripts/status_effect_component.gd" id="10_status_effects"]
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_player"]
 radius = 11.0
@@ -109,10 +110,15 @@ _data = {
 [node name="Main" type="Node2D"]
 
 [node name="Player" type="CharacterBody2D" parent="."]
+collision_layer = 2
+collision_mask = 3
 position = Vector2(180, 350)
 script = ExtResource("1_player")
 capture_ball_scene = ExtResource("3_capture_ball")
 pet_scene = ExtResource("6_pet")
+
+[node name="StatusEffects" type="Node" parent="Player"]
+script = ExtResource("10_status_effects")
 
 [node name="Sprite2D" type="Sprite2D" parent="Player"]
 scale = Vector2(2, 2)
@@ -153,7 +159,7 @@ theme_override_styles/fill = SubResource("StyleBoxFlat_player_health_fill")
 [node name="MeleeHitbox" type="Area2D" parent="Player"]
 position = Vector2(28, -4)
 collision_layer = 0
-collision_mask = 1
+collision_mask = 2
 monitoring = false
 monitorable = false
 

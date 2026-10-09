@@ -7,6 +7,8 @@
 monster_name = "Mây dông"
 movement_mode = "Fly"
 attack_style = "Melee"
+chain_lightning = true
+chain_lightning_radius = 64.0
 max_hp = 90
 attack_damage = 9
 movement_speed = 75.0

@@ -8,7 +8,7 @@ radius = 7.0
 
 [node name="Fireball" type="Area2D"]
 collision_layer = 0
-collision_mask = 1
+collision_mask = 2
 script = ExtResource("1_fireball")
 
 [node name="Sprite2D" type="Sprite2D" parent="."]

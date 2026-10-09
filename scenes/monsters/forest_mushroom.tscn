@@ -6,6 +6,7 @@
 [node name="ForestMushroom" instance=ExtResource("1_base")]
 monster_name = "Nấm độc"
 attack_style = "Ranged"
+attack_effect = "Poison"
 max_hp = 80
 attack_damage = 8
 movement_speed = 55.0

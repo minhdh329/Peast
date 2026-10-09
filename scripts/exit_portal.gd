@@ -9,6 +9,8 @@ var _used: bool = false
 
 
 func _ready() -> void:
+	collision_layer = 0
+	collision_mask = 2
 	var shape: CollisionShape2D = CollisionShape2D.new()
 	var capsule: CapsuleShape2D = CapsuleShape2D.new()
 	capsule.radius = RADIUS.x

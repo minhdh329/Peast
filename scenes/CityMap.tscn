@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://main.tscn" id="1_main"]
+
+[node name="CityMap" instance=ExtResource("1_main")]
+
+[node name="Terrain" parent="." index="1"]
+biome = 4
+randomize_biome_on_spawn = false

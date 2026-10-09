@@ -5,6 +5,7 @@
 [node name="VolcanoImp" instance=ExtResource("1_base")]
 monster_name = "Quỷ lửa"
 attack_style = "Ranged"
+attack_effect = "Burn"
 max_hp = 100
 attack_damage = 9
 movement_speed = 100.0

@@ -1,8 +1,10 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://scripts/pet.gd" id="1_pet"]
 [ext_resource type="Texture2D" path="res://assets/pet.png" id="2_pet"]
 [ext_resource type="PackedScene" path="res://scenes/fireball.tscn" id="3_fireball"]
+[ext_resource type="Script" path="res://scripts/status_effect_component.gd" id="4_status_effects"]
+[ext_resource type="Script" path="res://scripts/passive_vfx.gd" id="5_passive_vfx"]
 
 [sub_resource type="CircleShape2D" id="CircleShape2D_pet"]
 radius = 12.0
@@ -21,6 +23,9 @@ corner_radius_top_right = 2
 corner_radius_bottom_right = 2
 corner_radius_bottom_left = 2
 
+[sub_resource type="CircleShape2D" id="CircleShape2D_pet_dash"]
+radius = 26.0
+
 [node name="Pet" type="CharacterBody2D"]
 collision_layer = 0
 collision_mask = 0
@@ -28,8 +33,30 @@ motion_mode = 1
 script = ExtResource("1_pet")
 fireball_scene = ExtResource("3_fireball")
 
+[node name="StatusEffects" type="Node" parent="."]
+script = ExtResource("4_status_effects")
+
+[node name="PassiveVFX" type="Node2D" parent="."]
+script = ExtResource("5_passive_vfx")
+
+[node name="DashHitbox" type="Area2D" parent="."]
+collision_layer = 0
+collision_mask = 2
+monitoring = false
+monitorable = false
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="DashHitbox"]
+disabled = true
+shape = SubResource("CircleShape2D_pet_dash")
+
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 shape = SubResource("CircleShape2D_pet")
+
+[node name="GroundCheck" type="RayCast2D" parent="."]
+position = Vector2(0, 0)
+target_position = Vector2(10, 24)
+collision_mask = 1
+exclude_parent = true
 
 [node name="Sprite2D" type="Sprite2D" parent="."]
 scale = Vector2(2, 2)

@@ -19,6 +19,7 @@ var _is_despawning: bool = false
 # Kết nối tín hiệu va chạm để nhận biết lúc bóng chạm sàn.
 func _ready() -> void:
 	body_entered.connect(_on_body_entered)
+	($CaptureSensor as Area2D).body_entered.connect(_on_body_entered)
 	# Bóng rơi xuống nước hoặc ra ngoài map sẽ không chạm sàn nên cần giới hạn thời gian sống.
 	get_tree().create_timer(8.0).timeout.connect(queue_free)
 

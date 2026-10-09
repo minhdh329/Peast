@@ -7,6 +7,8 @@
 monster_name = "Sứa biển"
 movement_mode = "Swim"
 attack_style = "Ranged"
+attack_effect = "Stun"
+attack_effect_chance = 0.25
 max_hp = 70
 attack_damage = 6
 movement_speed = 60.0

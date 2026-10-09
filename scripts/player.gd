@@ -22,6 +22,7 @@ extends CharacterBody2D
 @export var max_hp: int = 100
 # Máu hiện tại của Player.
 @export var current_hp: int = 100
+var is_resistant_crab: bool = false
 
 # Mỗi phần tử là một thú đã bắt: {"name": String, "attack_style": String}.
 var captured_pets: Array[Dictionary] = []
@@ -57,6 +58,7 @@ var gravity: float = ProjectSettings.get_setting("physics/2d/default_gravity")
 @onready var sword_pivot: Node2D = $SwordPivot
 # Thanh máu cố định tương đối với Player.
 @onready var health_bar: ProgressBar = $HealthBar
+@onready var status_effects: Node = $StatusEffects
 
 # Cờ ngăn bắt đầu một nhát chém khác khi Hitbox hiện đang hoạt động.
 var _is_attacking: bool = false
@@ -82,6 +84,19 @@ func _physics_process(delta: float) -> void:
 		_die()
 		return
 	is_swimming = terrain != null and terrain.is_underwater(global_position)
+	if status_effects.call("is_stunned"):
+		velocity.x = 0.0
+		if is_swimming:
+			velocity.y = 0.0
+		elif not is_on_floor():
+			velocity.y += gravity * delta
+		else:
+			velocity.y = 0.0
+		move_and_slide()
+		if terrain != null:
+			terrain.wrap_horizontal(self)
+		_update_animation()
+		return
 	if is_swimming:
 		# Trong nước, W/S hoặc Space điều khiển hướng bơi theo chiều dọc.
 		jump_count = 0
@@ -143,6 +158,8 @@ func _physics_process(delta: float) -> void:
 
 	# Di chuyển nhân vật theo velocity và tự xử lý va chạm (trượt theo sàn/tường).
 	move_and_slide()
+	if terrain != null:
+		terrain.wrap_horizontal(self)
 	_update_animation()
 
 
@@ -258,13 +275,14 @@ func respawn(spawn_position: Vector2) -> void:
 
 
 # Monster gọi hàm này khi tấn công Player, truyền vị trí để xác định hướng bị đẩy.
-func take_damage(amount: int, attack_origin: Vector2) -> void:
+func take_damage(amount: int, attack_origin: Vector2, effect_type: String = "", effect_chance: float = 1.0, is_over_time: bool = false) -> void:
 	if current_hp <= 0:
 		return
 
-	current_hp = maxi(current_hp - amount, 0)
+	var damage_taken: int = int(status_effects.call("modify_incoming_damage", amount, effect_type, is_over_time))
+	current_hp = maxi(current_hp - damage_taken, 0)
 	_update_health_bar()
-	print("Player nhận ", amount, " sát thương. HP còn: ", current_hp, "/", max_hp)
+	print("Player nhận ", damage_taken, " sát thương. HP còn: ", current_hp, "/", max_hp)
 	var knockback_direction: float = signf(global_position.x - attack_origin.x)
 	if is_zero_approx(knockback_direction):
 		knockback_direction = 1.0
@@ -274,6 +292,8 @@ func take_damage(amount: int, attack_origin: Vector2) -> void:
 	if current_hp == 0:
 		print("Player đã hết HP.")
 		_die()
+	elif not effect_type.is_empty() and effect_type != "None":
+		status_effects.call("apply_effect", effect_type, attack_origin, effect_chance)
 
 
 # Player chết thì quay về Main Menu; Pet đã bắt vẫn được lưu.

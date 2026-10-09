@@ -1,0 +1,18 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/monster.tscn" id="1_base"]
+[ext_resource type="Texture2D" path="res://assets/monsters/white_cat.svg" id="2_cat"]
+
+[node name="CityCat" instance=ExtResource("1_base")]
+monster_name = "Mèo trắng"
+max_hp = 80
+attack_damage = 10
+movement_speed = 100.0
+attack_interval = 2.0
+charge_style = "Cat"
+charge_trigger_range = 140.0
+charge_speed = 700.0
+scale_size = Vector2(1, 1)
+
+[node name="Sprite2D" parent="."]
+texture = ExtResource("2_cat")

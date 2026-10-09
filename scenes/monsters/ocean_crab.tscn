@@ -7,6 +7,7 @@
 monster_name = "Cua biển"
 movement_mode = "Swim"
 attack_style = "Melee"
+is_resistant_crab = true
 max_hp = 120
 attack_damage = 8
 movement_speed = 65.0

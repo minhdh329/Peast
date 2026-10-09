@@ -1,0 +1,31 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/arena_manager.gd" id="1_arena_manager"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_arena_floor"]
+size = Vector2(960, 64)
+
+[node name="ArenaTest" type="Node2D"]
+
+[node name="Background" type="Polygon2D" parent="."]
+z_index = -20
+polygon = PackedVector2Array(0, 0, 960, 0, 960, 540, 0, 540)
+color = Color(0.075, 0.12, 0.16, 1)
+
+[node name="CenterLine" type="Polygon2D" parent="."]
+z_index = -10
+polygon = PackedVector2Array(478, 60, 482, 60, 482, 448, 478, 448)
+color = Color(0.25, 0.55, 0.62, 0.45)
+
+[node name="FloorVisual" type="Polygon2D" parent="."]
+polygon = PackedVector2Array(0, 448, 960, 448, 960, 540, 0, 540)
+color = Color(0.14, 0.28, 0.25, 1)
+
+[node name="Floor" type="StaticBody2D" parent="."]
+position = Vector2(480, 480)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Floor"]
+shape = SubResource("RectangleShape2D_arena_floor")
+
+[node name="ArenaManager" type="Node2D" parent="."]
+script = ExtResource("1_arena_manager")
