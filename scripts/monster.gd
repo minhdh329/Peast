@@ -1,4 +1,3 @@
-# Đăng ký kiểu Monster để CaptureBall có thể nhận diện quái khi va chạm.
 class_name Monster
 # CharacterBody2D cho phép Monster có collider tương tác với vật thể vật lý.
 extends CharacterBody2D
@@ -19,6 +18,7 @@ var current_hp: int = 0
 @export var patrol_speed: float = 40.0
 # Tốc độ Monster chạy về phía mục tiêu.
 @export var movement_speed: float = 90.0
+@export var jump_velocity: float = -400.0
 # Khoảng cách Monster có thể đứng yên và ra đòn.
 @export var attack_range: float = 38.0
 # Sát thương Monster gây ra cho Player hoặc Pet.
@@ -54,6 +54,8 @@ var is_dashing: bool = false
 @export var free_patrol_range: float = 120.0
 
 const FIREBALL_SCENE: PackedScene = preload("res://scenes/fireball.tscn")
+const GROUND_NAVIGATION: GDScript = preload("res://scripts/ground_navigation.gd")
+var _ground_navigation = GROUND_NAVIGATION.new()
 const TRAIT_DOUBLE_ATTACK: String = "DoubleAttack"
 const TRAIT_FAST_MOVEMENT: String = "FastMovement"
 const TRAIT_EXPLODE_ON_DEATH: String = "ExplodeOnDeath"
@@ -72,13 +74,15 @@ const AVAILABLE_TRAITS: Array[String] = [
 ]
 const DEFAULT_LIFESTEAL_CHANCE: float = 1.0
 const DEFAULT_LIFESTEAL_HEAL_FRACTION: float = 0.15
+const DEFAULT_DEATH_EXPLOSION_DAMAGE: int = 50
 
 enum State { PATROL, CHASE }
+enum MountType { GROUND, FLY, SWIM }
 
 @export_range(0.0, 1.0, 0.05) var lifesteal_chance: float = DEFAULT_LIFESTEAL_CHANCE
 @export_range(0.0, 1.0, 0.05) var lifesteal_heal_fraction: float = DEFAULT_LIFESTEAL_HEAL_FRACTION
 @export_range(0.0, 512.0, 1.0) var death_explosion_radius: float = 128.0
-@export var death_explosion_damage: int = 80
+@export var death_explosion_damage: int = DEFAULT_DEATH_EXPLOSION_DAMAGE
 var current_traits: Array[String] = []
 var _revive_available: bool = true
 var _is_reviving: bool = false
@@ -114,6 +118,7 @@ var _home_x: float = NAN
 
 # Đưa mọi Monster vào cùng một nhóm để panel debug có thể reset chúng.
 func _ready() -> void:
+	collision_mask |= ProceduralTerrain.PLATFORM_COLLISION_MASK
 	add_to_group("monsters")
 	city_charge = preload("res://scripts/city_charge.gd").new()
 	add_child(city_charge)
@@ -129,8 +134,13 @@ func _ready() -> void:
 	current_hp = max_hp
 	wall_check.add_exception(self)
 	ledge_check.add_exception(self)
+	wall_check.collision_mask = 1
+	ledge_check.collision_mask = 1 | ProceduralTerrain.PLATFORM_COLLISION_MASK
 	_update_health_bar()
 	passive_vfx.call("refresh")
+	var terrain: ProceduralTerrain = get_tree().get_first_node_in_group("procedural_terrain") as ProceduralTerrain
+	if terrain != null:
+		terrain.register_capture_candidate(self)
 
 
 func set_arena_team(team_tag: String) -> void:
@@ -201,6 +211,7 @@ func prepare_split_offspring(parent_monster: Monster) -> void:
 
 # Duy trì vật lý, đuổi theo mục tiêu gần nhất và tấn công trong tầm.
 func _physics_process(delta: float) -> void:
+	_ground_navigation.update(self)
 	if _is_reviving:
 		velocity = Vector2.ZERO
 		move_and_slide()
@@ -212,6 +223,8 @@ func _physics_process(delta: float) -> void:
 	if is_nan(_home_x):
 		_home_x = global_position.x
 	var free_movement: bool = _uses_free_movement()
+	if free_movement:
+		_ground_navigation.reset(self)
 	motion_mode = CharacterBody2D.MOTION_MODE_FLOATING if free_movement else CharacterBody2D.MOTION_MODE_GROUNDED
 	# Áp dụng trọng lực khi Monster đang ở trên không (trừ khi đang bay/bơi).
 	if free_movement:
@@ -302,14 +315,15 @@ func _process_free_chase(delta: float) -> void:
 # Đi qua lại, đảo chiều khi gặp tường hoặc rìa vực; chuyển sang đuổi khi Player vào vùng.
 func _process_patrol() -> void:
 	if not is_on_floor():
-		velocity.x = move_toward(velocity.x, 0.0, 300.0 * get_physics_process_delta_time())
 		return
 	if _player_in_detection_zone():
 		state = State.CHASE
 		return
 
 	_update_rays(_patrol_direction)
-	if is_on_floor() and (wall_check.is_colliding() or not ledge_check.is_colliding()):
+	if wall_check.is_colliding():
+		velocity.y = jump_velocity
+	elif not ledge_check.is_colliding():
 		_patrol_direction = -_patrol_direction
 		_update_rays(_patrol_direction)
 	velocity.x = _patrol_direction * patrol_speed
@@ -317,9 +331,6 @@ func _process_patrol() -> void:
 
 # Đuổi mục tiêu gần nhất và đánh khi vào tầm; hết mục tiêu thì quay lại tuần tra.
 func _process_chase(delta: float) -> void:
-	if not is_on_floor():
-		velocity.x = move_toward(velocity.x, 0.0, 900.0 * delta)
-		return
 	var target: Node2D = _find_closest_target()
 	if target == null:
 		state = State.PATROL
@@ -332,11 +343,12 @@ func _process_chase(delta: float) -> void:
 		velocity.x = move_toward(velocity.x, 0.0, 900.0 * delta)
 		if _attack_cooldown_remaining <= 0.0:
 			_attack_target(target)
-	elif is_on_floor() and (wall_check.is_colliding() or not ledge_check.is_colliding()):
-		# Không tự lao xuống vực hay đâm tường khi đuổi.
-		velocity.x = move_toward(velocity.x, 0.0, 900.0 * delta)
 	else:
+		if _ground_navigation.steer(self, GROUND_NAVIGATION.feet_for(target), movement_speed, jump_velocity, delta):
+			return
 		velocity.x = direction * movement_speed
+		if is_on_floor() and ((target_offset.y < -32.0 and absf(target_offset.x) < 96.0) or wall_check.is_colliding() or not ledge_check.is_colliding()):
+			velocity.y = jump_velocity
 
 
 # Ranged: tính từ tâm. Melee: tính từ mép thân Monster tới mép thân mục tiêu, nên đứng trên đầu cũng bị đánh.
@@ -385,10 +397,10 @@ func _update_rays(direction: float) -> void:
 func _player_in_detection_zone() -> bool:
 	if not arena_team.is_empty():
 		return _find_closest_target() != null
-	for body: Node2D in detection_zone.get_overlapping_bodies():
-		if body.is_in_group("player"):
-			return true
-	return false
+	var target: Node2D = _find_closest_target()
+	var detection_shape: CollisionShape2D = detection_zone.get_node("CollisionShape2D") as CollisionShape2D
+	var radius: float = detection_shape.shape.get_rect().size.x * 0.5
+	return target != null and global_position.distance_squared_to(target.global_position) <= radius * radius
 
 
 # Chọn mục tiêu sống gần nhất trong group Player và Pet, không giới hạn tầm khi đang đuổi.
@@ -429,6 +441,7 @@ func get_pet_data() -> Dictionary:
 	var monster_sprite: Sprite2D = $Sprite2D
 	return {
 		"name": monster_name,
+		"type": monster_name,
 		"attack_style": attack_style,
 		"texture": monster_sprite.texture,
 		"sprite_scale": monster_sprite.scale,
@@ -437,6 +450,9 @@ func get_pet_data() -> Dictionary:
 		"attack_interval": attack_interval,
 		"attack_range": attack_range,
 		"movement_mode": movement_mode,
+		"mount_type": _get_mount_type(),
+		"split_on_death": split_on_death,
+		"split_count": split_count,
 		"melee_contact_reach": melee_contact_reach,
 		"attack_effect": attack_effect,
 		"attack_effect_chance": attack_effect_chance,
@@ -460,6 +476,16 @@ func get_pet_data() -> Dictionary:
 		"death_explosion_radius": death_explosion_radius,
 		"death_explosion_damage": death_explosion_damage,
 	}
+
+
+func _get_mount_type() -> int:
+	match movement_mode:
+		"Fly":
+			return MountType.FLY
+		"Swim":
+			return MountType.SWIM
+		_:
+			return MountType.GROUND
 
 
 # Gây sát thương và khởi động cooldown sau mỗi đòn trúng mục tiêu.
@@ -628,12 +654,9 @@ func take_damage(amount: int, attack_origin: Vector2, effect_type: String = "", 
 
 
 func die() -> void:
-	if _is_reviving:
+	if _is_reviving or is_queued_for_deletion():
 		return
-	if current_traits.has(TRAIT_EXPLODE_ON_DEATH):
-		_explode_on_death()
-	if split_on_death and split_count == 0:
-		_split_into_slimes()
+	_trigger_death_passives()
 	if current_traits.has(TRAIT_REVIVE) and _revive_available:
 		_revive_available = false
 		_is_reviving = true
@@ -643,6 +666,13 @@ func die() -> void:
 		_complete_revival.call_deferred()
 		return
 	queue_free()
+
+
+func _trigger_death_passives() -> void:
+	if current_traits.has(TRAIT_EXPLODE_ON_DEATH):
+		_explode_on_death()
+	if split_on_death and split_count == 0:
+		_split_into_slimes()
 
 
 func _complete_revival() -> void:

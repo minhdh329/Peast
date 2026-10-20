@@ -6,12 +6,29 @@ enum Biome { FOREST, VOLCANO, OCEAN, SKY_ISLANDS, CITY }
 const RANDOM_BIOMES: Array[int] = [Biome.FOREST, Biome.VOLCANO, Biome.OCEAN, Biome.SKY_ISLANDS, Biome.CITY]
 
 const TILE_SIZE: Vector2i = Vector2i(32, 32)
+const PLATFORM_COLLISION_MASK: int = 4
+const PLATFORM_ALTERNATIVE: int = 1
+const PLATFORM_THICKNESS: int = 8
+const SKY_PIT_WIDTH: int = 8
+const SOLID_TERRAIN_COLORS: Dictionary = {
+	Biome.FOREST: Color("#80523a"),
+	Biome.VOLCANO: Color("#514b53"),
+	Biome.OCEAN: Color("#bd965d"),
+	Biome.SKY_ISLANDS: Color("#e9f5f1"),
+	Biome.CITY: Color("#66747b"),
+}
 const GRASS_TEXTURE: Texture2D = preload("res://assets/terrain_tile.svg")
 const OCEAN_TEXTURE: Texture2D = preload("res://assets/terrain_ocean.svg")
 const VOLCANO_TEXTURE: Texture2D = preload("res://assets/terrain_volcano.svg")
 const SKY_TEXTURE: Texture2D = preload("res://assets/terrain_sky.svg")
 const CITY_TEXTURE: Texture2D = preload("res://assets/terrain_city.svg")
 const CITY_SKYLINE: Texture2D = preload("res://assets/city_skyline.svg")
+const CITY_BACKGROUND: Texture2D = preload("res://assets/c86a3be5-cbc3-4d74-8f0b-f4070d9e3eef.jpg")
+const FOREST_BACKGROUND: Texture2D = preload("res://assets/Gemini_Generated_Image_qwu7kjqwu7kjqwu7.png")
+const VOLCANO_BACKGROUND: Texture2D = preload("res://assets/ABF30583-BCA8-4478-AD4C-F9A178D7BC59.jpeg")
+const OCEAN_BACKGROUND: Texture2D = preload("res://assets/25DDF2A9-E0A9-4B77-8CA1-E589A6FF390B.jpeg")
+const OCEAN_BACKGROUND_HORIZON_Y: float = 334.0
+const SKY_BACKGROUND: Texture2D = preload("res://assets/(n) 2.png")
 const EXIT_PORTAL_SCRIPT: GDScript = preload("res://scripts/exit_portal.gd")
 
 # Mỗi biome chỉ spawn đúng nhóm Monster của nó.
@@ -29,8 +46,8 @@ const MONSTER_SCENES: Dictionary = {
 @export var spawn_monsters_on_ready: bool = true
 @export var generation_seed: int = 20261002
 @export_range(16, 60, 1) var map_width_cells: int = 30
-@export_range(8, 24, 1) var floor_row: int = 15
-@export var water_surface_y: float = 160.0
+@export_range(8, 48, 1) var floor_row: int = 15
+@export var water_surface_y: float = 352.0
 @export var swim_speed: float = 145.0
 @export var water_drag: float = 520.0
 @export_range(0.1, 1.0, 0.05) var water_speed_factor: float = 0.55
@@ -47,6 +64,9 @@ var _debug_monster_spawn: Vector2 = Vector2(580.0, 462.0)
 var _monster_spawns: Array[Vector2] = []
 var _monsters_spawned: bool = false
 var _exit_portal: Area2D
+var _capture_candidates: Array[Dictionary] = []
+var _registered_capture_ids: Dictionary = {}
+var _stage_completed: bool = false
 
 
 func _ready() -> void:
@@ -56,11 +76,20 @@ func _ready() -> void:
 		biome_rng.randomize()
 		biome = RANDOM_BIOMES[biome_rng.randi_range(0, RANDOM_BIOMES.size() - 1)] as Biome
 		print("Spawned biome: ", Biome.keys()[biome])
+	_fit_layout_to_viewport(get_viewport_rect().size)
 	tile_set = _create_terrain_tile_set()
 	_generate_layout()
 	_place_demo_characters()
 	if spawn_monsters_on_ready:
 		_spawn_biome_monsters.call_deferred()
+
+
+func _fit_layout_to_viewport(viewport_size: Vector2) -> void:
+	map_width_cells = maxi(map_width_cells, ceili(viewport_size.x / TILE_SIZE.x))
+	var previous_floor_row: int = floor_row
+	floor_row = clampi(maxi(floor_row, ceili(viewport_size.y / TILE_SIZE.y) - 2), 8, 48)
+	water_surface_y += float(floor_row - previous_floor_row) * TILE_SIZE.y
+	fall_death_y = maxf(fall_death_y, float((floor_row + 4) * TILE_SIZE.y + 100))
 
 
 func _process(delta: float) -> void:
@@ -91,6 +120,28 @@ func _is_map_cleared() -> bool:
 	return true
 
 
+func register_capture_candidate(monster: Monster) -> void:
+	if _stage_completed or not monster.arena_team.is_empty():
+		return
+	var instance_id: int = monster.get_instance_id()
+	if _registered_capture_ids.has(instance_id):
+		return
+	_registered_capture_ids[instance_id] = true
+	_capture_candidates.append(monster.get_pet_data().duplicate(true))
+
+
+func complete_stage(player: Node2D) -> void:
+	if _stage_completed or not _monsters_spawned or not _is_map_cleared():
+		return
+	if not player.has_method("is_alive") or not player.call("is_alive"):
+		return
+	_stage_completed = true
+	var storage: Node = get_tree().root.get_node("PetStorage")
+	var candidates: Array[Dictionary] = _capture_candidates.duplicate(true)
+	storage.set("pending_capture_candidates", candidates)
+	get_tree().change_scene_to_file.call_deferred("res://scenes/capture_rewards.tscn")
+
+
 # Cổng đặt tại điểm spawn Monster xa nhất (cuối map), đáy cổng chạm mặt đất.
 func _open_exit_portal() -> void:
 	_exit_portal = EXIT_PORTAL_SCRIPT.new()
@@ -104,15 +155,27 @@ func _create_terrain_tile_set() -> TileSet:
 	terrain_tile_set.tile_size = TILE_SIZE
 
 	var atlas_source: TileSetAtlasSource = TileSetAtlasSource.new()
-	atlas_source.texture = _get_biome_texture()
-	atlas_source.texture_region_size = TILE_SIZE
+	var source_image: Image = _get_biome_texture().get_image()
+	var atlas_image: Image = Image.create(source_image.get_width(), TILE_SIZE.y * 2, false, Image.FORMAT_RGBA8)
 	var atlas_tile_count: int = 2 if biome == Biome.VOLCANO else 1
+	for atlas_x: int in range(atlas_tile_count):
+		var solid_color: Color = Color("#ef713b") if biome == Biome.VOLCANO and atlas_x == 1 else SOLID_TERRAIN_COLORS[biome]
+		atlas_image.fill_rect(Rect2i(atlas_x * TILE_SIZE.x, 0, TILE_SIZE.x, TILE_SIZE.y), solid_color)
+		if biome == Biome.VOLCANO and atlas_x == 1:
+			atlas_image.blend_rect(source_image, Rect2i(TILE_SIZE.x, 0, TILE_SIZE.x, TILE_SIZE.y), Vector2i(TILE_SIZE.x, 0))
+		atlas_image.fill_rect(Rect2i(atlas_x * TILE_SIZE.x, TILE_SIZE.y, TILE_SIZE.x, PLATFORM_THICKNESS), solid_color)
+		atlas_image.blend_rect(source_image, Rect2i(atlas_x * TILE_SIZE.x, 0, TILE_SIZE.x, PLATFORM_THICKNESS), Vector2i(atlas_x * TILE_SIZE.x, TILE_SIZE.y))
+	atlas_source.texture = ImageTexture.create_from_image(atlas_image)
+	atlas_source.texture_region_size = TILE_SIZE
 	for atlas_x: int in range(atlas_tile_count):
 		atlas_source.create_tile(Vector2i(atlas_x, 0))
 	terrain_tile_set.add_source(atlas_source, 0)
 	terrain_tile_set.add_physics_layer()
 	terrain_tile_set.set_physics_layer_collision_layer(0, 1)
 	terrain_tile_set.set_physics_layer_collision_mask(0, 1)
+	terrain_tile_set.add_physics_layer()
+	terrain_tile_set.set_physics_layer_collision_layer(1, PLATFORM_COLLISION_MASK)
+	terrain_tile_set.set_physics_layer_collision_mask(1, 1)
 
 	for atlas_x: int in range(atlas_tile_count):
 		var tile_data: TileData = atlas_source.get_tile_data(Vector2i(atlas_x, 0), 0)
@@ -123,6 +186,20 @@ func _create_terrain_tile_set() -> TileSet:
 			Vector2(16, 16),
 			Vector2(-16, 16)
 		]))
+		var platform_coords: Vector2i = Vector2i(atlas_x, 1)
+		atlas_source.create_tile(platform_coords)
+		atlas_source.create_alternative_tile(platform_coords, PLATFORM_ALTERNATIVE)
+		var platform_data: TileData = atlas_source.get_tile_data(platform_coords, PLATFORM_ALTERNATIVE)
+		platform_data.z_index = -1
+		platform_data.set_collision_polygons_count(0, 0)
+		platform_data.set_collision_polygons_count(1, 1)
+		platform_data.set_collision_polygon_points(1, 0, PackedVector2Array([
+			Vector2(-16, -16),
+			Vector2(16, -16),
+			Vector2(16, -16 + PLATFORM_THICKNESS),
+			Vector2(-16, -16 + PLATFORM_THICKNESS)
+		]))
+		platform_data.set_collision_polygon_one_way(1, 0, true)
 	return terrain_tile_set
 
 
@@ -158,36 +235,83 @@ func _generate_layout() -> void:
 			_generate_city()
 		_:
 			_generate_forest(random_generator)
+	_generate_side_walls(0)
 
 
 func _generate_forest(random_generator: RandomNumberGenerator) -> void:
-	_add_background(Color("#18282d"))
-	_add_forest_scenery(random_generator)
+	var viewport_size: Vector2 = get_viewport_rect().size
+	var forest_background: Sprite2D = Sprite2D.new()
+	forest_background.name = "ForestBackground"
+	forest_background.texture = FOREST_BACKGROUND
+	forest_background.centered = false
+	forest_background.z_index = -12
+	forest_background.scale = Vector2(
+		float(map_width_cells * TILE_SIZE.x) / FOREST_BACKGROUND.get_width(),
+		viewport_size.y / FOREST_BACKGROUND.get_height()
+	)
+	add_child(forest_background)
 	_generate_floor_and_walls(0)
-	for start_x: int in [3, map_width_cells - 8]:
-		var platform_length: int = random_generator.randi_range(3, 5)
-		var platform_row: int = random_generator.randi_range(floor_row - 3, floor_row - 2)
-		_add_platform(start_x, platform_row, platform_length, 0)
+	var tier_count: int = mini(6, int((floor_row - 2) / 2))
+	var route_starts: Array[int] = []
+	for route_start: int in range(3, map_width_cells - 6, 9):
+		route_starts.append(route_start)
+	var skipped_route_count: int = int(route_starts.size() / 3)
+	for route_index: int in range(route_starts.size()):
+		var skipped_before: int = roundi(float(route_index) * skipped_route_count / route_starts.size())
+		var skipped_after: int = roundi(float(route_index + 1) * skipped_route_count / route_starts.size())
+		if skipped_after > skipped_before:
+			continue
+		var platform_row: int = floor_row - 2
+		for tier_index: int in range(tier_count):
+			var start_x: int = route_starts[route_index] + (2 if tier_index % 2 == 1 else 0)
+			var platform_length: int = random_generator.randi_range(3, 5)
+			_add_platform(start_x, platform_row, platform_length, 0)
+			platform_row -= random_generator.randi_range(1, 2)
 	_monster_spawns = [_ground_spawn(14.5, floor_row), _ground_spawn(21.5, floor_row), _ground_spawn(26.5, floor_row)]
+	_debug_player_spawn = Vector2(180.0, floor_row * TILE_SIZE.y - 22.0)
+	_debug_monster_spawn = _monster_spawns[1]
 
 
 func _generate_ocean(random_generator: RandomNumberGenerator) -> void:
-	_add_background(Color("#167d9b"), water_surface_y)
-	_add_ocean_scenery(random_generator)
-	_add_water_surface_line()
+	water_surface_y = clampf(water_surface_y, TILE_SIZE.y * 3.0, (floor_row - 2) * TILE_SIZE.y)
+	var surface_row: int = roundi(water_surface_y / TILE_SIZE.y)
+	water_surface_y = surface_row * TILE_SIZE.y
+	var ocean_background: Sprite2D = Sprite2D.new()
+	ocean_background.name = "OceanBackground"
+	ocean_background.texture = OCEAN_BACKGROUND
+	ocean_background.centered = false
+	ocean_background.z_index = -12
+	var viewport_size: Vector2 = get_viewport_rect().size
+	var background_scale: float = maxf(float(map_width_cells * TILE_SIZE.x) / OCEAN_BACKGROUND.get_width(), viewport_size.y / OCEAN_BACKGROUND.get_height())
+	ocean_background.scale = Vector2.ONE * background_scale
+	ocean_background.position = Vector2(0.0, water_surface_y - OCEAN_BACKGROUND_HORIZON_Y * background_scale)
+	add_child(ocean_background)
 	_generate_floor_and_walls(0)
-	_add_platform(2, 6, random_generator.randi_range(4, 5), 0)
-	_add_platform(10, 9, random_generator.randi_range(4, 5), 0)
-	_add_platform(18, 7, random_generator.randi_range(5, 6), 0)
-	_add_platform(26, 10, 3, 0)
-	_debug_player_spawn = Vector2(3.5 * TILE_SIZE.x, water_surface_y + 10.0)
-	_debug_monster_spawn = Vector2(21.5 * TILE_SIZE.x, 7 * TILE_SIZE.y - 18.0)
-	_monster_spawns = [_ground_spawn(11.5, 9), _ground_spawn(19.5, 7), _ground_spawn(27.5, 10)]
+	for start_x: int in range(2, map_width_cells - 2, 8):
+		_add_platform(start_x, surface_row, 4, 0)
+	var monster_columns: Array[int] = [6, int(map_width_cells / 2) - 2, map_width_cells - 10]
+	_debug_player_spawn = Vector2(3.5 * TILE_SIZE.x, water_surface_y - 22.0)
+	_monster_spawns = [
+		_ground_spawn(monster_columns[0] + 1.5, floor_row),
+		_ground_spawn(monster_columns[1] + 1.5, floor_row),
+		_ground_spawn(monster_columns[2] + 1.5, floor_row),
+	]
+	_debug_monster_spawn = _monster_spawns[1]
 
 
 func _generate_volcano(random_generator: RandomNumberGenerator) -> void:
-	_add_background(Color("#302a32"))
-	_add_volcano_scenery(random_generator)
+	var viewport_size: Vector2 = Vector2(
+		float(map_width_cells * TILE_SIZE.x),
+		get_viewport_rect().size.y
+	)
+	var volcano_background: Sprite2D = Sprite2D.new()
+	volcano_background.name = "VolcanoBackground"
+	volcano_background.texture = VOLCANO_BACKGROUND
+	volcano_background.z_index = -12
+	volcano_background.position = viewport_size * 0.5
+	var cover_scale: float = maxf(viewport_size.x / VOLCANO_BACKGROUND.get_width(), viewport_size.y / VOLCANO_BACKGROUND.get_height())
+	volcano_background.scale = Vector2.ONE * cover_scale
+	add_child(volcano_background)
 	_generate_side_walls(0)
 	var lava_segments: Array[Vector2i] = [Vector2i(7, 10), Vector2i(15, 18), Vector2i(24, 26)]
 	for x: int in range(map_width_cells):
@@ -198,22 +322,48 @@ func _generate_volcano(random_generator: RandomNumberGenerator) -> void:
 		if lava_tile:
 			_lava_areas.append(Rect2(Vector2(x * TILE_SIZE.x, floor_row * TILE_SIZE.y - 26), Vector2(TILE_SIZE.x, TILE_SIZE.y + 24)))
 
-	_add_platform(3, floor_row - 3, random_generator.randi_range(3, 5), 0)
-	_add_platform(11, floor_row - 4, random_generator.randi_range(3, 5), 0)
+	var peak_start: int = int(map_width_cells / 2) - 2
+	var slope_tiers: int = mini(int((floor_row - 4) / 2), maxi(1, int((map_width_cells - 8) / 6) + 1))
+	for tier_index: int in range(slope_tiers):
+		var left_start: int = 2 + roundi(float(peak_start - 2) * tier_index / slope_tiers)
+		var right_start: int = map_width_cells - 5 - left_start
+		var platform_row: int = floor_row - 2 * (tier_index + 1)
+		_add_platform(left_start, platform_row, 5, 0)
+		_add_platform(right_start, platform_row, 5, 0)
+	_add_platform(peak_start, floor_row - 2 * (slope_tiers + 1), 4, 0)
 	_debug_player_spawn = Vector2(3.5 * TILE_SIZE.x, floor_row * TILE_SIZE.y - 22.0)
 	_debug_monster_spawn = Vector2(21.5 * TILE_SIZE.x, floor_row * TILE_SIZE.y - 18.0)
 	_monster_spawns = [_ground_spawn(13.5, floor_row), _ground_spawn(20.5, floor_row), _ground_spawn(28.5, floor_row)]
 
 
 func _generate_sky_islands() -> void:
-	_add_background(Color("#83c9d2"))
-	_add_sky_scenery()
-	_add_platform(2, 13, 5, 0)
-	_add_platform(12, 10, 5, 0)
-	_add_platform(22, 7, 5, 0)
-	_debug_player_spawn = Vector2(3.5 * TILE_SIZE.x, 13 * TILE_SIZE.y - 22.0)
-	_debug_monster_spawn = Vector2(14.5 * TILE_SIZE.x, 10 * TILE_SIZE.y - 18.0)
-	_monster_spawns = [_ground_spawn(13.5, 10), _ground_spawn(15.5, 10), _ground_spawn(24.5, 7)]
+	var viewport_size: Vector2 = Vector2(
+		float(map_width_cells * TILE_SIZE.x),
+		get_viewport_rect().size.y
+	)
+	var sky_background: Sprite2D = Sprite2D.new()
+	sky_background.name = "SkyBackground"
+	sky_background.texture = SKY_BACKGROUND
+	sky_background.z_index = -12
+	sky_background.position = viewport_size * 0.5
+	var cover_scale: float = maxf(viewport_size.x / SKY_BACKGROUND.get_width(), viewport_size.y / SKY_BACKGROUND.get_height())
+	sky_background.scale = Vector2.ONE * cover_scale
+	add_child(sky_background)
+	var pit_start: int = int((map_width_cells - SKY_PIT_WIDTH) / 2)
+	for column: int in range(map_width_cells):
+		if column >= pit_start and column < pit_start + SKY_PIT_WIDTH:
+			continue
+		for row: int in range(floor_row, floor_row + 4):
+			set_cell(Vector2i(column, row), 0, Vector2i.ZERO)
+	_add_platform(pit_start, floor_row, SKY_PIT_WIDTH, 0)
+	_add_platform(2, floor_row - 2, 5, 0)
+	_add_platform(8, floor_row - 2, 2, 0)
+	_add_platform(12, floor_row - 4, 5, 0)
+	_add_platform(18, floor_row - 4, 2, 0)
+	_add_platform(22, floor_row - 6, 5, 0)
+	_debug_player_spawn = Vector2(3.5 * TILE_SIZE.x, (floor_row - 2) * TILE_SIZE.y - 22.0)
+	_debug_monster_spawn = _ground_spawn(14.5, floor_row - 4)
+	_monster_spawns = [_ground_spawn(13.5, floor_row - 4), _ground_spawn(15.5, floor_row - 4), _ground_spawn(24.5, floor_row - 6)]
 
 
 func _generate_floor_and_walls(atlas_x: int) -> void:
@@ -224,27 +374,32 @@ func _generate_floor_and_walls(atlas_x: int) -> void:
 
 
 func _generate_city() -> void:
-	_add_background(Color("#b1dedb"))
-	var skyline: Sprite2D = Sprite2D.new()
-	skyline.name = "CitySkyline"
-	skyline.texture = CITY_SKYLINE
-	skyline.centered = false
-	skyline.z_index = -9
-	skyline.scale = Vector2(float(map_width_cells * TILE_SIZE.x) / 960.0, float(floor_row * TILE_SIZE.y) / 480.0)
-	add_child(skyline)
-	_add_city_scenery()
+	var viewport_size: Vector2 = Vector2(
+		float(map_width_cells * TILE_SIZE.x),
+		get_viewport_rect().size.y
+	)
+	var city_background: Sprite2D = Sprite2D.new()
+	city_background.name = "CityBackground"
+	city_background.texture = CITY_BACKGROUND
+	city_background.z_index = -12
+	city_background.position = viewport_size * 0.5
+	var cover_scale: float = maxf(viewport_size.x / CITY_BACKGROUND.get_width(), viewport_size.y / CITY_BACKGROUND.get_height())
+	city_background.scale = Vector2.ONE * cover_scale
+	add_child(city_background)
 	_generate_floor_and_walls(0)
 	var building_columns: Array[int] = [int(map_width_cells * 0.32), int(map_width_cells * 0.65)]
 	for building_index: int in range(building_columns.size()):
 		var start_x: int = building_columns[building_index]
-		var roof_row: int = floor_row - 3 - building_index
-		_add_platform(start_x - 2, floor_row - 2, 2, 0)
-		for row: int in range(roof_row, floor_row):
-			_add_platform(start_x, row, 4, 0)
+		var roof_row: int = floor_row - 5 - building_index
+		for step_row: int in range(floor_row - 2, roof_row, -1):
+			_add_platform(start_x - 2, step_row, 2, 0)
+			_add_platform(start_x + 4, step_row, 2, 0)
+		for row: int in range(roof_row, floor_row - 2):
+			_add_platform(start_x, row, 4, 0, false)
 	_debug_player_spawn = Vector2(3.5 * TILE_SIZE.x, floor_row * TILE_SIZE.y - 22.0)
 	_monster_spawns = [
-		_ground_spawn(building_columns[0] + 1.5, floor_row - 3),
-		_ground_spawn(building_columns[1] + 1.5, floor_row - 4),
+		_ground_spawn(building_columns[0] + 1.5, floor_row - 5),
+		_ground_spawn(building_columns[1] + 1.5, floor_row - 6),
 		_ground_spawn(map_width_cells - 3.5, floor_row),
 	]
 	_debug_monster_spawn = _monster_spawns[0]
@@ -252,8 +407,6 @@ func _generate_city() -> void:
 
 func _add_forest_scenery(random_generator: RandomNumberGenerator) -> void:
 	var world_width: float = float(map_width_cells * TILE_SIZE.x)
-	_add_mountain_range("DistantMountains", random_generator, 365.0, 145.0, 265.0, Color("#879cad"), -9)
-	_add_mountain_range("ForestRidges", random_generator, 410.0, 245.0, 335.0, Color("#527b70"), -8)
 	for tree_index: int in range(36):
 		var x: float = random_generator.randf_range(0.0, world_width)
 		var height: float = random_generator.randf_range(48.0, 112.0)
@@ -263,71 +416,6 @@ func _add_forest_scenery(random_generator: RandomNumberGenerator) -> void:
 		_add_deciduous_tree(x, float(floor_row * TILE_SIZE.y - 10), random_generator.randf_range(108.0, 188.0), random_generator, -3)
 	for bush_x: float in [34.0, 222.0, 372.0, 642.0, 840.0, 946.0]:
 		_add_bush(bush_x, float(floor_row * TILE_SIZE.y - 13), random_generator, -2)
-
-
-func _add_ocean_scenery(random_generator: RandomNumberGenerator) -> void:
-	var sky: Polygon2D = Polygon2D.new()
-	sky.name = "OceanSky"
-	sky.z_index = -12
-	sky.polygon = PackedVector2Array([Vector2.ZERO, Vector2(map_width_cells * TILE_SIZE.x, 0), Vector2(map_width_cells * TILE_SIZE.x, water_surface_y), Vector2(0, water_surface_y)])
-	sky.color = Color("#82c9d8")
-	add_child(sky)
-	_add_mountain_range("OceanIslandsFar", random_generator, water_surface_y + 36.0, 48.0, 118.0, Color("#83aa9c"), -9)
-	for coral_index: int in range(15):
-		var coral_x: float = random_generator.randf_range(0.0, float(map_width_cells * TILE_SIZE.x))
-		var coral_y: float = random_generator.randf_range(water_surface_y + 42.0, float(floor_row * TILE_SIZE.y - 18))
-		_add_coral(coral_x, coral_y, random_generator, -3)
-
-
-func _add_volcano_scenery(random_generator: RandomNumberGenerator) -> void:
-	_add_mountain_range("VolcanoAshMountains", random_generator, 390.0, 160.0, 280.0, Color("#625765"), -9)
-	_add_mountain_range("VolcanoRidges", random_generator, 430.0, 280.0, 355.0, Color("#493e4b"), -8)
-	var world_width: float = float(map_width_cells * TILE_SIZE.x)
-	for plume_index: int in range(8):
-		var plume_x: float = random_generator.randf_range(0.0, world_width)
-		var plume_y: float = random_generator.randf_range(100.0, 270.0)
-		_add_cloud_puff(plume_x, plume_y, random_generator.randf_range(24.0, 52.0), Color(0.88, 0.72, 0.63, 0.28), -7)
-	for ember_index: int in range(28):
-		var ember: Polygon2D = Polygon2D.new()
-		ember.name = "DistantEmber"
-		ember.z_index = -2
-		var ember_x: float = random_generator.randf_range(0.0, world_width)
-		var ember_y: float = random_generator.randf_range(265.0, float(floor_row * TILE_SIZE.y - 28))
-		ember.polygon = _ellipse_points(ember_x, ember_y, random_generator.randf_range(1.0, 2.5), random_generator.randf_range(1.0, 3.0), 8)
-		ember.color = Color("#ef9860")
-		add_child(ember)
-
-
-func _add_sky_scenery() -> void:
-	var random_generator: RandomNumberGenerator = RandomNumberGenerator.new()
-	random_generator.seed = generation_seed + 73
-	for cloud_index: int in range(13):
-		var cloud_x: float = random_generator.randf_range(-30.0, float(map_width_cells * TILE_SIZE.x))
-		var cloud_y: float = random_generator.randf_range(48.0, 345.0)
-		_add_cloud_puff(cloud_x, cloud_y, random_generator.randf_range(26.0, 68.0), Color(0.92, 0.98, 0.98, 0.48), -9)
-	_add_mountain_range("SkyIslandsFar", random_generator, 430.0, 245.0, 365.0, Color("#74b8ba"), -8)
-
-
-func _add_city_scenery() -> void:
-	var world_width: float = float(map_width_cells * TILE_SIZE.x)
-	for lamp_x: float in [92.0, 462.0, 860.0]:
-		var lamp: Polygon2D = Polygon2D.new()
-		lamp.name = "StreetLamp"
-		lamp.z_index = -2
-		lamp.polygon = PackedVector2Array([
-			Vector2(lamp_x - 2.0, 305.0), Vector2(lamp_x + 2.0, 305.0),
-			Vector2(lamp_x + 2.0, float(floor_row * TILE_SIZE.y)), Vector2(lamp_x - 2.0, float(floor_row * TILE_SIZE.y)),
-		])
-		lamp.color = Color("#485761")
-		add_child(lamp)
-		_add_glow(lamp_x, 306.0, Color("#ffdf8b", 0.7), -1)
-	var wire: Line2D = Line2D.new()
-	wire.name = "OverheadWire"
-	wire.z_index = -2
-	wire.width = 2.0
-	wire.default_color = Color("#52616c")
-	wire.points = PackedVector2Array([Vector2(0.0, 292.0), Vector2(world_width * 0.25, 307.0), Vector2(world_width * 0.5, 294.0), Vector2(world_width * 0.75, 309.0), Vector2(world_width, 296.0)])
-	add_child(wire)
 
 
 func _add_mountain_range(layer_name: String, random_generator: RandomNumberGenerator, base_y: float, min_peak_y: float, max_peak_y: float, color: Color, draw_order: int) -> void:
@@ -341,8 +429,9 @@ func _add_mountain_range(layer_name: String, random_generator: RandomNumberGener
 		var peak_x: float = start_x + (end_x - start_x) * random_generator.randf_range(0.38, 0.62)
 		points.append(Vector2(peak_x, random_generator.randf_range(min_peak_y, max_peak_y)))
 		points.append(Vector2(end_x, base_y))
-	points.append(Vector2(world_width, float(ProjectSettings.get_setting("display/window/size/viewport_height"))))
-	points.append(Vector2(0.0, float(ProjectSettings.get_setting("display/window/size/viewport_height"))))
+	var viewport_height: float = get_viewport_rect().size.y
+	points.append(Vector2(world_width, viewport_height))
+	points.append(Vector2(0.0, viewport_height))
 	_add_polygon(layer_name, points, color, draw_order)
 
 
@@ -421,15 +510,20 @@ func _add_polygon(node_name: String, points: PackedVector2Array, color: Color, d
 	return polygon
 
 
-func _generate_side_walls(atlas_x: int) -> void:
-	for y: int in range(floor_row):
-		set_cell(Vector2i(0, y), 0, Vector2i(atlas_x, 0))
-		set_cell(Vector2i(map_width_cells - 1, y), 0, Vector2i(atlas_x, 0))
+func _generate_side_walls(_atlas_x: int) -> void:
+	var boundaries: StaticBody2D = get_node_or_null("MapBoundaries") as StaticBody2D
+	if boundaries == null:
+		boundaries = preload("res://scripts/map_boundaries.gd").new() as StaticBody2D
+		boundaries.name = "MapBoundaries"
+		boundaries.set("map_width", float(map_width_cells * TILE_SIZE.x))
+		add_child(boundaries)
+	else:
+		boundaries.set("map_width", float(map_width_cells * TILE_SIZE.x))
 
 
-func _add_platform(start_x: int, row: int, length: int, atlas_x: int) -> void:
+func _add_platform(start_x: int, row: int, length: int, atlas_x: int, one_way: bool = true) -> void:
 	for x: int in range(start_x, mini(start_x + length, map_width_cells - 1)):
-		set_cell(Vector2i(x, row), 0, Vector2i(atlas_x, 0))
+		set_cell(Vector2i(x, row), 0, Vector2i(atlas_x, 1 if one_way else 0), PLATFORM_ALTERNATIVE if one_way else 0)
 
 
 func _is_lava_column(column: int, segments: Array[Vector2i]) -> bool:
@@ -443,7 +537,7 @@ func _add_background(color: Color, top_y: float = 0.0) -> void:
 	var background: Polygon2D = Polygon2D.new()
 	background.name = "BiomeBackground"
 	background.z_index = -10
-	var screen_height: float = float(ProjectSettings.get_setting("display/window/size/viewport_height"))
+	var screen_height: float = get_viewport_rect().size.y
 	var world_width: float = map_width_cells * TILE_SIZE.x
 	background.polygon = PackedVector2Array([
 		Vector2(0.0, top_y), Vector2(world_width, top_y),
@@ -481,6 +575,16 @@ func wrap_horizontal(body: Node2D) -> void:
 	body.global_position = to_global(local_position)
 
 
+func wrap_sky_fall(body: CharacterBody2D) -> bool:
+	if biome != Biome.SKY_ISLANDS or body.global_position.y <= fall_death_y:
+		return false
+	var local_position: Vector2 = to_local(body.global_position)
+	local_position.y = -40.0
+	body.global_position = to_global(local_position)
+	body.velocity.y = 0.0
+	return true
+
+
 func is_lava_at(world_position: Vector2) -> bool:
 	for lava_area: Rect2 in _lava_areas:
 		if lava_area.has_point(world_position):
@@ -497,8 +601,6 @@ func get_player_spawn_position() -> Vector2:
 
 
 func _place_demo_characters() -> void:
-	if biome == Biome.FOREST:
-		return
 	var scene_root: Node = get_parent()
 	var player: CharacterBody2D = scene_root.get_node_or_null("Player") as CharacterBody2D
 	if player != null:

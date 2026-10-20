@@ -54,4 +54,6 @@ func _on_body_entered(body: Node2D) -> void:
 	if _used or not body.is_in_group("player"):
 		return
 	_used = true
-	get_tree().change_scene_to_file.call_deferred(MENU_SCENE)
+	var terrain: ProceduralTerrain = get_tree().get_first_node_in_group("procedural_terrain") as ProceduralTerrain
+	if terrain != null:
+		terrain.complete_stage(body)

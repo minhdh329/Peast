@@ -34,7 +34,7 @@ func start(target: Node2D) -> void:
 	trigger_count = 0
 	_hit_ids.clear()
 	_original_mask = _actor.collision_mask
-	_actor.collision_mask = 1
+	_actor.collision_mask = 1 | (_original_mask & ProceduralTerrain.PLATFORM_COLLISION_MASK)
 	active = true
 	_trail_remaining = 0.0
 	(_actor.get_node("Sprite2D") as Sprite2D).flip_h = _direction < 0.0

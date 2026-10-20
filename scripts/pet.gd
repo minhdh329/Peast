@@ -6,6 +6,9 @@ extends CharacterBody2D
 @export var follow_distance: float = 34.0
 # Tốc độ Pet di chuyển tới vị trí bám theo.
 @export var follow_speed: float = 240.0
+@export var jump_velocity: float = -400.0
+const GROUND_NAVIGATION: GDScript = preload("res://scripts/ground_navigation.gd")
+var _ground_navigation = GROUND_NAVIGATION.new()
 # Scene Fireball được tạo mỗi khi timer tấn công hết thời gian.
 @export var fireball_scene: PackedScene
 # Sát thương mỗi viên Fireball gây ra cho Monster.
@@ -37,6 +40,9 @@ var is_dashing: bool = false
 @export var max_hp: int = 40
 # Máu hiện tại của Pet.
 @export var current_hp: int = 40
+@export var split_on_death: bool = false
+var split_count: int = 0
+var _pet_data: Dictionary = {}
 
 signal fainted
 
@@ -47,6 +53,7 @@ var _attack_style: String = "Ranged"
 var arena_team: String = ""
 var _arena_active: bool = true
 var _movement_mode: String = "Ground"
+var mount_type: int = Monster.MountType.GROUND
 var _gravity: float = ProjectSettings.get_setting("physics/2d/default_gravity")
 var current_traits: Array[String] = []
 var _revive_available: bool = true
@@ -54,7 +61,7 @@ var _is_reviving: bool = false
 var _lifesteal_chance: float = Monster.DEFAULT_LIFESTEAL_CHANCE
 var _lifesteal_heal_fraction: float = Monster.DEFAULT_LIFESTEAL_HEAL_FRACTION
 var _death_explosion_radius: float = 128.0
-var _death_explosion_damage: int = 80
+var _death_explosion_damage: int = Monster.DEFAULT_DEATH_EXPLOSION_DAMAGE
 # Monster còn sống gần Pet nhất trên toàn map.
 var _target_monster: Node2D
 # Vận tốc đẩy lùi tạm thời khi Monster đánh Pet.
@@ -105,11 +112,14 @@ func set_arena_active(active: bool) -> void:
 
 # Biến Pet thành đúng Monster đã bắt: đổi hình ảnh, kiểu đánh, máu và sát thương.
 func apply_pet_data(pet_data: Dictionary) -> void:
+	_pet_data = pet_data.duplicate(true)
+	split_on_death = bool(pet_data.get("split_on_death", false))
+	split_count = int(pet_data.get("split_count", 0))
 	_attack_style = pet_data["attack_style"]
 	sprite.texture = pet_data["texture"]
 	sprite.scale = pet_data["sprite_scale"]
 	max_hp = pet_data["max_hp"]
-	current_hp = max_hp
+	current_hp = clampi(int(pet_data.get("current_hp", max_hp)), 0, max_hp)
 	attack_damage = pet_data["attack_damage"]
 	attack_effect = str(pet_data.get("attack_effect", "None"))
 	attack_effect_chance = float(pet_data.get("attack_effect_chance", 1.0))
@@ -142,10 +152,21 @@ func apply_pet_data(pet_data: Dictionary) -> void:
 	attack_timer.wait_time = pet_data.get("attack_interval", attack_timer.wait_time)
 	attack_timer.start()
 	_movement_mode = str(pet_data.get("movement_mode", "Ground"))
+	mount_type = int(pet_data.get("mount_type", _get_mount_type_for_movement_mode(_movement_mode)))
 	motion_mode = CharacterBody2D.MOTION_MODE_FLOATING if _uses_free_movement() else CharacterBody2D.MOTION_MODE_GROUNDED
-	collision_mask = 1
+	collision_mask = 1 | ProceduralTerrain.PLATFORM_COLLISION_MASK
 	_update_health_bar()
 	passive_vfx.call("refresh")
+
+
+func _get_mount_type_for_movement_mode(mode: String) -> int:
+	match mode:
+		"Fly":
+			return Monster.MountType.FLY
+		"Swim":
+			return Monster.MountType.SWIM
+		_:
+			return Monster.MountType.GROUND
 
 
 # Player truyền kiểu chiến đấu đã lưu từ Monster vào Pet khi triệu hồi.
@@ -155,6 +176,7 @@ func set_attack_style(attack_style: String) -> void:
 
 # Kết nối vùng dò và bắt đầu chu kỳ tự động tấn công.
 func _ready() -> void:
+	collision_mask |= ProceduralTerrain.PLATFORM_COLLISION_MASK
 	add_to_group("pets")
 	city_charge = preload("res://scripts/city_charge.gd").new()
 	add_child(city_charge)
@@ -166,6 +188,7 @@ func _ready() -> void:
 
 # Cập nhật vị trí Pet mỗi frame để nó bám theo phía sau Player.
 func _physics_process(delta: float) -> void:
+	_ground_navigation.update(self)
 	# Tự xóa Pet nếu Player không còn tồn tại trong scene.
 	if not is_instance_valid(_target_player) and arena_team.is_empty():
 		queue_free()
@@ -176,6 +199,8 @@ func _physics_process(delta: float) -> void:
 		_wrap_horizontal_on_sky_islands()
 		return
 	var free_movement: bool = _uses_free_movement()
+	if free_movement:
+		_ground_navigation.reset(self)
 	motion_mode = CharacterBody2D.MOTION_MODE_FLOATING if free_movement else CharacterBody2D.MOTION_MODE_GROUNDED
 	if not _arena_active:
 		velocity = Vector2.ZERO
@@ -233,7 +258,17 @@ func _physics_process(delta: float) -> void:
 		movement_speed = melee_move_speed
 		sprite.flip_h = pet_to_monster.x < 0.0
 	if not free_movement:
-		follow_position.y = global_position.y
+		var goal: Vector2 = follow_position + Vector2(0.0, _body_radius())
+		if is_instance_valid(_target_monster):
+			goal = GROUND_NAVIGATION.feet_for(_target_monster)
+		elif is_instance_valid(_target_player):
+			goal = GROUND_NAVIGATION.feet_for(_target_player) + Vector2(-follow_distance * facing_direction, 0.0)
+		if _ground_navigation.steer(self, goal, movement_speed, jump_velocity, delta):
+			if is_instance_valid(_target_monster) and Monster.distance_to_body_surface(_target_monster, global_position) - _body_radius() <= stop_distance_for_ground_target():
+				velocity.x = 0.0
+			_move_on_ground(Vector2(velocity.x * delta, 0.0), delta, false)
+			_wrap_horizontal_on_sky_islands()
+			return
 
 	# Di chuyển mượt với tốc độ độc lập theo thời gian frame.
 	var target_position: Vector2 = global_position.move_toward(follow_position, movement_speed * delta)
@@ -282,15 +317,19 @@ func _uses_free_movement() -> bool:
 	return false
 
 
-func _move_on_ground(motion: Vector2, delta: float) -> void:
+func stop_distance_for_ground_target() -> float:
+	return melee_contact_reach * 0.5 if _attack_style == "Melee" else ranged_attack_range * 0.8
+
+
+func _move_on_ground(motion: Vector2, delta: float, check_ledge: bool = true) -> void:
 	if is_on_floor():
-		if velocity.y > 0.0:
+		if velocity.y > 0.0 and not _ground_navigation.is_dropping():
 			velocity.y = 0.0
 	else:
 		velocity.y += _gravity * delta
 
 	velocity.x = motion.x / maxf(delta, 0.001)
-	if is_on_floor() and not is_zero_approx(velocity.x):
+	if check_ledge and is_on_floor() and not is_zero_approx(velocity.x):
 		ground_check.position.x = signf(velocity.x) * 12.0
 		ground_check.target_position = Vector2(0.0, 26.0)
 		ground_check.force_raycast_update()
@@ -331,10 +370,9 @@ func take_damage(amount: int, attack_origin: Vector2, effect_type: String = "", 
 
 
 func die() -> void:
-	if _is_reviving:
+	if _is_reviving or is_queued_for_deletion():
 		return
-	if current_traits.has(Monster.TRAIT_EXPLODE_ON_DEATH):
-		_explode_on_death()
+	_trigger_death_passives()
 	if current_traits.has(Monster.TRAIT_REVIVE) and _revive_available:
 		_revive_available = false
 		_is_reviving = true
@@ -346,6 +384,43 @@ func die() -> void:
 	print("Pet đã bị hạ gục và không thể gọi lại trong trận này.")
 	fainted.emit()
 	queue_free()
+
+
+func _trigger_death_passives() -> void:
+	if current_traits.has(Monster.TRAIT_EXPLODE_ON_DEATH):
+		_explode_on_death()
+	if split_on_death and split_count == 0:
+		_split_into_slimes()
+
+
+func _split_into_slimes() -> void:
+	split_count = 1
+	var pet_scene: PackedScene = load("res://scenes/pet.tscn")
+	var offspring_group: Array[Pet] = []
+	for offset: float in [-12.0, 12.0]:
+		var offspring: Pet = pet_scene.instantiate() as Pet
+		offspring.set_arena_team(arena_team)
+		offspring.set_arena_active(_arena_active)
+		get_parent().add_child(offspring)
+		var offspring_data: Dictionary = _pet_data.duplicate(true)
+		offspring_data["max_hp"] = maxi(roundi(max_hp * 0.5), 1)
+		offspring_data["current_hp"] = offspring_data["max_hp"]
+		offspring_data["attack_damage"] = maxi(roundi(attack_damage * 0.5), 1)
+		offspring_data["sprite_scale"] = sprite.scale * 0.5
+		offspring_data["current_traits"] = current_traits.duplicate()
+		offspring_data["revive_available"] = _revive_available
+		offspring_data["split_on_death"] = true
+		offspring_data["split_count"] = split_count
+		offspring.apply_pet_data(offspring_data)
+		if is_instance_valid(_target_player):
+			offspring.set_follow_target(_target_player)
+		for sibling: Pet in offspring_group:
+			offspring.add_collision_exception_with(sibling)
+			sibling.add_collision_exception_with(offspring)
+		offspring.add_collision_exception_with(self)
+		add_collision_exception_with(offspring)
+		offspring_group.append(offspring)
+		offspring.global_position = global_position + Vector2(offset, 0.0)
 
 
 func _complete_revival() -> void:
@@ -388,6 +463,10 @@ func is_alive() -> bool:
 
 func is_reviving() -> bool:
 	return _is_reviving
+
+
+func can_be_recalled() -> bool:
+	return is_alive() and split_count == 0 and not (current_traits.has(Monster.TRAIT_REVIVE) and not _revive_available)
 
 
 # Cập nhật thanh máu theo HP hiện tại.

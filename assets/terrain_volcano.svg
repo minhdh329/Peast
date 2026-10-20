@@ -3,9 +3,17 @@
     <path d="M1 1h30v30H1z" fill="#514b53"/>
     <path d="M1 8 8 5l5 4 7-3 11 4v5H1z" fill="#6d6264"/>
     <path d="M5 21h6m9-5h6m-4 11h7" stroke="#827579" stroke-width="2" stroke-linecap="round"/>
-    <path d="M33 1h30v30H33z" fill="#563a3a"/>
-    <path d="M33 8q5-4 10 0t10 0 10 0v8H33z" fill="#ef713b"/>
-    <path d="M35 22q5-5 9 0t9 0 9 0" fill="none" stroke="#ffc553" stroke-width="2.5"/>
-    <path d="M33 2h30" stroke="#ffad43" stroke-width="2"/>
+  </g>
+  <g>
+    <rect x="32" width="32" height="32" fill="#9f2c1e"/>
+    <path d="M32 7C38 3 42 11 48 7S58 3 64 7V18C58 22 54 14 48 18S38 22 32 18Z" fill="#d64220"/>
+    <path d="M32 10C38 7 42 14 48 10S58 7 64 10V14C58 17 54 11 48 14S38 17 32 14Z" fill="#f26728"/>
+    <path d="M32 24C38 21 42 27 48 24S58 21 64 24V29C58 31 54 26 48 29S38 31 32 29Z" fill="#c5351e"/>
+    <path d="M32 6C38 2 42 10 48 6S58 2 64 6" fill="none" stroke="#ffad38" stroke-width="1.2"/>
+    <path d="M32 23C38 20 42 26 48 23S58 20 64 23" fill="none" stroke="#ff8b2d" stroke-width="1.2"/>
+    <path d="M36 18l3-2 2 1m12 2 3-2 2 1M40 28l2-1m13-9 2-2" fill="none" stroke="#ffd45a" stroke-width=".9" stroke-linecap="round" opacity=".9"/>
+    <circle cx="35" cy="12" r=".8" fill="#ffd45a"/>
+    <circle cx="59" cy="27" r=".7" fill="#ffb83e"/>
+    <circle cx="51" cy="4" r=".6" fill="#ffcf4b"/>
   </g>
 </svg>

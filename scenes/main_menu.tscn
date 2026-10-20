@@ -20,6 +20,22 @@ grow_horizontal = 2
 grow_vertical = 2
 color = Color(0.1, 0.14, 0.2, 1)
 
+[node name="GoldBalance" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -240.0
+offset_top = 12.0
+offset_right = -20.0
+offset_bottom = 44.0
+grow_horizontal = 0
+theme_override_colors/font_color = Color(1, 0.82, 0.35, 1)
+theme_override_font_sizes/font_size = 22
+text = "Vàng: 0"
+horizontal_alignment = 2
+mouse_filter = 2
+
 [node name="MenuCenter" type="CenterContainer" parent="."]
 unique_name_in_owner = true
 layout_mode = 1
@@ -55,7 +71,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(220, 48)
 layout_mode = 2
 theme_override_font_sizes/font_size = 22
-text = "Arena 3v3"
+text = "Arena 5v5"
 
 [node name="DebugButton" type="Button" parent="MenuCenter/VBoxContainer"]
 unique_name_in_owner = true
@@ -112,18 +128,76 @@ size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 28
 text = "Inventory Pet"
 
+[node name="FusionButton" type="Button" parent="InventoryPanel/Margin/VBox/Header"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(120, 48)
+layout_mode = 2
+text = "Dung Hợp"
+
 [node name="CloseButton" type="Button" parent="InventoryPanel/Margin/VBox/Header"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(100, 36)
 layout_mode = 2
 text = "Đóng"
 
-[node name="TeamLabel" type="Label" parent="InventoryPanel/Margin/VBox"]
+[node name="ArenaStartButton" type="Button" parent="InventoryPanel/Margin/VBox/Header"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(140, 36)
+layout_mode = 2
+text = "Bắt đầu 5v5"
+
+[node name="PlayStartButton" type="Button" parent="InventoryPanel/Margin/VBox/Header"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(140, 36)
+layout_mode = 2
+text = "Vào game"
+
+[node name="PanelGoldBalance" type="Label" parent="InventoryPanel/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.82, 0.35, 1)
+text = "Vàng: 0"
+autowrap_mode = 2
+
+[node name="LoadoutRow" type="HBoxContainer" parent="InventoryPanel/Margin/VBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 24
+
+[node name="FighterColumn" type="VBoxContainer" parent="InventoryPanel/Margin/VBox/LoadoutRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TeamLabel" type="Label" parent="InventoryPanel/Margin/VBox/LoadoutRow/FighterColumn"]
+unique_name_in_owner = true
+visible = false
 layout_mode = 2
 text = "Đội hình mang vào trận (phím 1 / 2 / 3)"
 
-[node name="TeamRow" type="HBoxContainer" parent="InventoryPanel/Margin/VBox"]
+[node name="TeamRow" type="HBoxContainer" parent="InventoryPanel/Margin/VBox/LoadoutRow/FighterColumn"]
 unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="MountColumn" type="VBoxContainer" parent="InventoryPanel/Margin/VBox/LoadoutRow"]
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="MountLabel" type="Label" parent="InventoryPanel/Margin/VBox/LoadoutRow/MountColumn"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = "Thú cưỡi (không tham gia chiến đấu)"
+
+[node name="MountRow" type="HBoxContainer" parent="InventoryPanel/Margin/VBox/LoadoutRow/MountColumn"]
+unique_name_in_owner = true
+visible = false
 layout_mode = 2
 theme_override_constants/separation = 12
 

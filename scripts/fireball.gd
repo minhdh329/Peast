@@ -28,6 +28,7 @@ const HOSTILE_HIT_RADIUS: float = 18.0
 
 # Kết nối sự kiện va chạm và khởi động bộ đếm vòng đời.
 func _ready() -> void:
+	collision_mask |= ProceduralTerrain.PLATFORM_COLLISION_MASK
 	body_entered.connect(_on_body_entered)
 	_time_remaining = lifetime
 

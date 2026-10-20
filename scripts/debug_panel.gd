@@ -18,6 +18,8 @@ extends CanvasLayer
 
 # Nối sự kiện nút sau khi các node con đã sẵn sàng.
 func _ready() -> void:
+	if preload("res://scripts/mobile_controls.gd").is_enabled():
+		hide()
 	respawn_button.pressed.connect(_on_respawn_pressed)
 	respawn_player_button.pressed.connect(_on_respawn_player_pressed)
 	toggle_button.toggled.connect(func(shown: bool) -> void: panel.visible = shown)

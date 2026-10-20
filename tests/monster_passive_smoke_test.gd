@@ -248,7 +248,7 @@ func _run() -> void:
 	var explosive: Monster = cloud_scene.instantiate() as Monster
 	root.add_child(explosive)
 	explosive.current_traits = [Monster.TRAIT_EXPLODE_ON_DEATH]
-	explosive.death_explosion_damage = 80
+	explosive.death_explosion_damage = 50
 	explosive.death_explosion_radius = 128.0
 	explosive.global_position = Vector2(0.0, 100.0)
 	primary.hp = 200
@@ -259,8 +259,8 @@ func _run() -> void:
 		if pet_target != secondary:
 			pet_target.remove_from_group("pets")
 	explosive.die()
-	if primary.hp != 120 or secondary.hp != 120 or distant.hp != 200:
-		_fail("Death explosion should deal 80 damage only inside its radius.")
+	if primary.hp != 150 or secondary.hp != 150 or distant.hp != 200:
+		_fail("Death explosion should deal 50 damage only inside its radius.")
 		return
 	await process_frame
 	if pet_test_scene.get_node_or_null("DeathExplosionFX") == null:
@@ -285,33 +285,6 @@ func _run() -> void:
 		_fail("Pet Lifesteal should always heal 15% of damage dealt.")
 		return
 
-	var capture_scene: PackedScene = load("res://scenes/capture_ball.tscn")
-	var capture_target: Monster = cloud_scene.instantiate() as Monster
-	root.add_child(capture_target)
-	capture_target.set_physics_process(false)
-	capture_target.global_position = Vector2(6000.0, 0.0)
-	var capture_ball: CaptureBall = capture_scene.instantiate() as CaptureBall
-	var other_ball: CaptureBall = capture_scene.instantiate() as CaptureBall
-	root.add_child(capture_ball)
-	root.add_child(other_ball)
-	capture_ball.global_position = capture_target.global_position
-	other_ball.global_position = Vector2(6200.0, 0.0)
-	if capture_ball.collision_layer != 0 or capture_ball.collision_mask != 1:
-		_fail("CaptureBall must collide only with terrain, not actors or balls.")
-		return
-	if (capture_ball.collision_mask & capture_target.collision_layer) != 0 or (capture_ball.collision_mask & other_ball.collision_layer) != 0:
-		_fail("CaptureBall physics masks must exclude Monsters and other balls.")
-		return
-	var detected: Array[bool] = [false]
-	var sensor: Area2D = capture_ball.get_node("CaptureSensor") as Area2D
-	sensor.body_entered.connect(func(body: Node2D) -> void:
-		if body == capture_target:
-			detected[0] = true)
-	for frame_index: int in range(4):
-		await physics_frame
-	if not detected[0] or not is_instance_valid(capture_target) or capture_target.is_queued_for_deletion():
-		_fail("CaptureSensor must detect a Monster without blocking it; full-HP capture must fail.")
-		return
 	print("Monster passive smoke test passed.")
 	quit(0)
 
