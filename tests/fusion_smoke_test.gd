@@ -15,7 +15,7 @@ func _run() -> void:
 	_storage = (load("res://scripts/pet_storage.gd") as Script).new() as Node
 	_storage.set("save_path", TEST_SAVE_PATH)
 	seed(20261019)
-	if not _test_validation() or not _test_trait_pools() or not _test_removal_and_save():
+	if not _test_validation() or not _test_trait_pools() or not _test_fusion_progression() or not _test_removal_and_save():
 		_finish(1)
 		return
 	if not await _test_inventory_fusion_ui():
@@ -26,6 +26,7 @@ func _run() -> void:
 
 
 func _make_pet(species: String, traits: Array[String]) -> Dictionary:
+	species = {"Slime": "Slime rừng", "Bird": "Chim gió", "Jelly": "Sứa biển", "Crab": "Cua biển"}.get(species, species)
 	return _storage.call("_to_saved", {
 		"name": species,
 		"type": species,
@@ -56,6 +57,12 @@ func _test_validation() -> bool:
 	before = JSON.stringify(collection)
 	if not (_storage.call("CombinePets", 0, 1) as Dictionary).is_empty() or JSON.stringify(collection) != before:
 		push_error("An empty trait pool must be rejected before removing either parent.")
+		return false
+	collection.assign([_make_pet("Unknown", ["DoubleAttack"]), _make_pet("Unknown", ["DoubleAttack"])])
+	_storage.set("collection", collection)
+	before = JSON.stringify(collection)
+	if not (_storage.call("CombinePets", 0, 1) as Dictionary).is_empty() or JSON.stringify(collection) != before:
+		push_error("Unknown species must be rejected rather than using a parent's current stats as the species base.")
 		return false
 	return true
 
@@ -97,8 +104,8 @@ func _test_trait_pools() -> bool:
 					push_error("Fusion may only choose unique traits from the two parents.")
 					return false
 				seen.append(trait_name)
-			if int(combined["max_hp"]) != 100 * (2 if selected.has("DoubleHP") else 1) or int(combined["attack_damage"]) != 10 * (2 if selected.has("DoubleDamage") else 1):
-				push_error("Fusion should remove old baked stat bonuses and apply only the selected DoubleHP/DoubleDamage bonuses.")
+			if int(combined["max_hp"]) != roundi(60 * 1.01 * (2 if selected.has("DoubleHP") else 1)) or int(combined["attack_damage"]) != roundi(5 * 1.01 * (2 if selected.has("DoubleDamage") else 1)):
+				push_error("Fusion must use species base stats, add 1 percent, and apply only the newly selected stat traits before rounding.")
 				return false
 			if parent_a != original_parent or combined["sprite_scale"] != Vector2(2.0, 2.0) or not combined["split_on_death"]:
 				push_error("Fusion should deep-copy parent A and preserve its scale and species passives.")
@@ -106,6 +113,74 @@ func _test_trait_pools() -> bool:
 	if not large_pool_produced_fewer_than_three:
 		push_error("Fusion should allow one or two traits even when the unique pool contains four or more.")
 		return false
+	return true
+
+
+func _test_fusion_progression() -> bool:
+	var terrain_script: GDScript = load("res://scripts/procedural_terrain.gd") as GDScript
+	var monster_scenes: Dictionary = terrain_script.get_script_constant_map()["MONSTER_SCENES"]
+	for pool: Array in monster_scenes.values():
+		for scene: PackedScene in pool:
+			var monster: Monster = scene.instantiate() as Monster
+			var species: String = monster.monster_name
+			var base_hp: int = monster.max_hp
+			var base_attack: int = monster.attack_damage
+			monster.free()
+			for reversed_order: bool in [false, true]:
+				var parent_a: Dictionary = _make_pet(species, ["DoubleAttack"])
+				var parent_b: Dictionary = _make_pet(species, ["DoubleAttack"])
+				parent_a["fusion_count"] = 3
+				parent_b["fusion_count"] = 5
+				var collection: Array[Dictionary] = [parent_a, parent_b]
+				_storage.set("collection", collection)
+				var combined: Dictionary = _storage.call("CombinePets", 1 if reversed_order else 0, 0 if reversed_order else 1) as Dictionary
+				if int(combined.get("fusion_count", -1)) != 6 or int(combined["max_hp"]) != roundi(base_hp * 1.06) or int(combined["attack_damage"]) != roundi(base_attack * 1.06):
+					push_error("Every species must use its scene base stats and max(parent counts) + 1 regardless of selection order.")
+					return false
+	var legacy: Dictionary = _make_pet("Slime", ["DoubleAttack"])
+	legacy.erase("fusion_count")
+	var collection: Array[Dictionary] = [legacy]
+	_storage.set("collection", collection)
+	if int((_storage.call("get_runtime_pet", 0) as Dictionary).get("fusion_count", -1)) != 0:
+		push_error("Legacy saves without a fusion counter must default to zero.")
+		return false
+	for count: int in range(1, 101):
+		collection.append(_make_pet("Slime", ["DoubleAttack"]))
+		var combined: Dictionary = _storage.call("CombinePets", 0, 1) as Dictionary
+		if int(combined.get("fusion_count", -1)) != count or int(combined["max_hp"]) != roundi(60 * (1.0 + count / 100.0)) or int(combined["attack_damage"]) != roundi(5 * (1.0 + count / 100.0)):
+			push_error("Repeated fusion must accumulate linearly up to 100 without rounding drift.")
+			return false
+	_storage.call("load_data")
+	var loaded: Dictionary = _storage.call("get_runtime_pet", 0) as Dictionary
+	var saved_again: Dictionary = _storage.call("_to_saved", loaded) as Dictionary
+	if int(loaded.get("fusion_count", -1)) != 100 or int(saved_again.get("fusion_count", -1)) != 100 or int(loaded["max_hp"]) != 120 or int(loaded["attack_damage"]) != 10:
+		push_error("Fusion count and accumulated stats must survive save/reload and runtime serialization.")
+		return false
+	var tooltip: String = preload("res://scripts/pet_details.gd").build_tooltip(loaded)
+	if not tooltip.contains("Số lần dung hợp: 100") or not tooltip.contains("+100%"):
+		push_error("Shared Monster details must show both fusion count and accumulated species-base bonus.")
+		return false
+	var pet: Pet = (load("res://scenes/pet.tscn") as PackedScene).instantiate() as Pet
+	root.add_child(pet)
+	pet.apply_pet_data(loaded)
+	var combat_stats_match: bool = pet.max_hp == 120 and pet.attack_damage == 10
+	pet.free()
+	if not combat_stats_match:
+		push_error("Summoned Pets must use the persisted fusion HP and damage in combat.")
+		return false
+	for capped_count: int in [100, 105]:
+		for reversed_order: bool in [false, true]:
+			var capped: Dictionary = _make_pet("Slime", ["DoubleAttack"])
+			capped["fusion_count"] = capped_count
+			collection.assign([capped, _make_pet("Slime", ["DoubleAttack"])])
+			_storage.set("collection", collection)
+			_storage.call("save_data")
+			var before: String = JSON.stringify(collection)
+			var saved_before: String = FileAccess.get_file_as_string(TEST_SAVE_PATH)
+			var result: Dictionary = _storage.call("CombinePets", 1 if reversed_order else 0, 0 if reversed_order else 1)
+			if not result.is_empty() or JSON.stringify(collection) != before or FileAccess.get_file_as_string(TEST_SAVE_PATH) != saved_before:
+				push_error("A parent at or above 100 must block fusion in either slot without consuming pets or changing the save.")
+				return false
 	return true
 
 
@@ -126,7 +201,7 @@ func _test_removal_and_save() -> bool:
 		_storage.set("mount_pet_index", 2)
 		_storage.set("gold", 19)
 		var combined: Dictionary = _storage.call("CombinePets", 3 if reversed_order else 1, 1 if reversed_order else 3) as Dictionary
-		if combined.is_empty() or collection.size() != 4 or collection[0]["name"] != "Bird" or collection[1]["name"] != "Jelly" or collection[2]["name"] != "Crab" or collection[3]["type"] != "Slime":
+		if combined.is_empty() or collection.size() != 4 or collection[0]["name"] != "Chim gió" or collection[1]["name"] != "Sứa biển" or collection[2]["name"] != "Cua biển" or collection[3]["type"] != "Slime rừng":
 			push_error("Fusion must delete the greater parent index first and append the fused Pet last.")
 			return false
 		_storage.call("load_data")
@@ -134,7 +209,7 @@ func _test_removal_and_save() -> bool:
 			push_error("Fusion should preserve valid loadouts, reindex survivors, and leave gold unchanged.")
 			return false
 		var loaded: Dictionary = _storage.call("get_runtime_pet", 3) as Dictionary
-		if loaded["current_traits"] != combined["current_traits"] or loaded["max_hp"] != combined["max_hp"] or loaded["type"] != "Slime":
+		if loaded["current_traits"] != combined["current_traits"] or loaded["max_hp"] != combined["max_hp"] or loaded["type"] != "Slime rừng" or int(loaded.get("fusion_count", -1)) != 1:
 			push_error("The fused Pet must survive a save/reload with the same species, traits, and stats.")
 			return false
 	return true
@@ -170,6 +245,18 @@ func _test_inventory_fusion_ui() -> bool:
 	if not combine.disabled:
 		push_error("Fusion should be disabled until two Pets are selected.")
 		return false
+	var live_collection: Array = _live_storage.get("collection")
+	live_collection[0]["fusion_count"] = 100
+	screen.call("_refresh_selection")
+	if not (screen.get("_pet_buttons")[0] as Button).disabled:
+		push_error("The fusion roster must disable Monsters at the 100-fusion cap.")
+		return false
+	screen.call("_select_pet", 0)
+	if not (screen.get("_selected_indices") as Array).is_empty():
+		push_error("Capped Monsters must not be selectable even through a direct handler call.")
+		return false
+	live_collection[0]["fusion_count"] = 0
+	screen.call("_refresh_selection")
 	screen.call("_select_pet", 0)
 	var pet_buttons: Array = screen.get("_pet_buttons")
 	if not (pet_buttons[0] as Button).is_visible_in_tree() or not (pet_buttons[1] as Button).is_visible_in_tree() or (pet_buttons[2] as Button).is_visible_in_tree():
@@ -195,7 +282,7 @@ func _test_inventory_fusion_ui() -> bool:
 		return false
 	screen.call("_toggle_details", 0)
 	var details: Array = screen.get("_details_labels")
-	if not (details[0] as Label).visible:
+	if not (details[0] as Label).visible or not (details[0] as Label).text.contains("Số lần dung hợp: 0"):
 		push_error("The fusion screen should allow inspecting Pet details.")
 		return false
 	screen.call("_toggle_details", 0)
@@ -203,6 +290,12 @@ func _test_inventory_fusion_ui() -> bool:
 	if combine.disabled:
 		push_error("Fusion should become available after selecting two same-species Pets.")
 		return false
+	live_collection[0]["fusion_count"] = 100
+	screen.call("_request_combine")
+	if (screen.get("_confirm") as ConfirmationDialog).visible:
+		push_error("A stale selection containing a capped Monster must not open confirmation.")
+		return false
+	live_collection[0]["fusion_count"] = 0
 	await process_frame
 	await process_frame
 	if not root.get_visible_rect().encloses(combine.get_global_rect()):
@@ -215,7 +308,7 @@ func _test_inventory_fusion_ui() -> bool:
 		print("Screenshot: ", screenshot_path)
 	screen.call("_request_combine")
 	var confirmation: ConfirmationDialog = screen.get("_confirm") as ConfirmationDialog
-	if not confirmation.visible or (_live_storage.get("collection") as Array).size() != 3:
+	if not confirmation.visible or (_live_storage.get("collection") as Array).size() != 3 or not confirmation.dialog_text.contains("Số lần dung hợp: 1 (+1%"):
 		push_error("Fusion should request confirmation before consuming either Pet.")
 		return false
 	screen.call("_back")
@@ -234,7 +327,7 @@ func _test_inventory_fusion_ui() -> bool:
 	var result_image: TextureRect = screen.get("_result_image") as TextureRect
 	var result_details: RichTextLabel = screen.get("_result_details") as RichTextLabel
 	var continue_button: Button = screen.get("_result_continue") as Button
-	if not result_screen.visible or result_image.texture != fused_pet["texture"] or result_details.text != preload("res://scripts/pet_details.gd").build_tooltip(fused_pet):
+	if not result_screen.visible or result_image.texture != fused_pet["texture"] or result_details.text != preload("res://scripts/pet_details.gd").build_tooltip(fused_pet) or not result_details.text.contains("Số lần dung hợp: 1"):
 		push_error("Successful fusion should show the actual new Monster image, stats, and selected traits on a separate result screen.")
 		return false
 	screen.call("_select_pet", 0)

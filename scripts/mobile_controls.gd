@@ -75,6 +75,7 @@ static func is_enabled() -> bool:
 
 
 func _ready() -> void:
+	add_to_group("mobile_controls")
 	layer = 20
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	get_tree().quit_on_go_back = false
@@ -88,6 +89,16 @@ func _ready() -> void:
 	_create_pause_overlay()
 	get_viewport().size_changed.connect(_layout_buttons)
 	_layout_buttons()
+
+
+func is_pointer_over_button(viewport_position: Vector2) -> bool:
+	# TouchScreenButton does not consume the original mouse event.
+	for button: TouchScreenButton in _buttons:
+		if button.is_visible_in_tree():
+			var local_position: Vector2 = button.get_global_transform_with_canvas().affine_inverse() * viewport_position
+			if Rect2(Vector2.ZERO, Vector2.ONE * BUTTON_SIZE).has_point(local_position):
+				return true
+	return false
 
 
 func _create_joystick() -> void:

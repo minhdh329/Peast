@@ -20,6 +20,8 @@ var _time_remaining: float = 0.0
 # Đạn do Monster bắn: trúng Player/Pet thay vì Monster.
 var hostile: bool = false
 var arena_team: String = ""
+var friendly_fire: bool = false
+var damage_source: Node2D
 var lifesteal_source: Node
 var lifesteal_chance: float = 0.0
 var lifesteal_heal_fraction: float = 0.15
@@ -65,14 +67,16 @@ func _physics_process(delta: float) -> void:
 		return
 
 	global_position += _direction * speed * delta
-	if hostile or not arena_team.is_empty():
+	if hostile or friendly_fire or not arena_team.is_empty():
 		_check_hostile_hit()
 
 
 # Pet không có body vật lý nên đạn của Monster dò mục tiêu theo khoảng cách.
 func _check_hostile_hit() -> void:
 	var target_groups: Array[String] = ["player", "pets"]
-	if not arena_team.is_empty():
+	if friendly_fire:
+		target_groups = ["player", "pets", "monsters", "TeamPlayer", "TeamEnemy"]
+	elif not arena_team.is_empty():
 		target_groups = ["TeamEnemy" if arena_team == "TeamPlayer" else "TeamPlayer"]
 	for group_name: String in target_groups:
 		for target: Node in get_tree().get_nodes_in_group(group_name):
@@ -86,9 +90,9 @@ func _check_hostile_hit() -> void:
 				return
 
 
-# Chỉ Monster mới chặn đạn; đạn bay xuyên địa hình và chủ nhân, không bị tile giữa Pet và mục tiêu xoá mất.
+# Đạn thường bỏ qua đồng minh; đạn Điên loạn có thể trúng cả hai phe, trừ người bắn.
 func _on_body_entered(body: Node2D) -> void:
-	if hostile:
+	if hostile and not friendly_fire:
 		return
 	if _can_hit(body):
 		body.call("take_damage", damage, global_position, effect_type, effect_chance)
@@ -97,12 +101,14 @@ func _on_body_entered(body: Node2D) -> void:
 
 
 func _can_hit(target: Node2D) -> bool:
-	if is_queued_for_deletion() or target == source_player or target.is_queued_for_deletion():
+	if is_queued_for_deletion() or target == damage_source or (target == source_player and not friendly_fire) or target.is_queued_for_deletion():
 		return false
 	if not target.has_method("take_damage"):
 		return false
 	if target.has_method("is_alive") and not target.call("is_alive"):
 		return false
+	if friendly_fire:
+		return target.is_in_group("player") or target.is_in_group("pets") or target.is_in_group("monsters") or target.is_in_group("TeamPlayer") or target.is_in_group("TeamEnemy")
 	var own_team: String = arena_team
 	if own_team.is_empty():
 		own_team = "TeamEnemy" if hostile else "TeamPlayer"

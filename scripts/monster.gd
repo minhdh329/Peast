@@ -53,16 +53,22 @@ var is_dashing: bool = false
 # Swim/Fly tuần tra qua lại trong khoảng này quanh điểm xuất phát.
 @export var free_patrol_range: float = 120.0
 
-const FIREBALL_SCENE: PackedScene = preload("res://scenes/fireball.tscn")
 const GROUND_NAVIGATION: GDScript = preload("res://scripts/ground_navigation.gd")
 var _ground_navigation = GROUND_NAVIGATION.new()
 const TRAIT_DOUBLE_ATTACK: String = "DoubleAttack"
+const DOUBLE_ATTACK_DELAY: float = 0.15
 const TRAIT_FAST_MOVEMENT: String = "FastMovement"
 const TRAIT_EXPLODE_ON_DEATH: String = "ExplodeOnDeath"
 const TRAIT_REVIVE: String = "Revive"
 const TRAIT_LIFESTEAL: String = "Lifesteal"
 const TRAIT_DOUBLE_HP: String = "DoubleHP"
 const TRAIT_DOUBLE_DAMAGE: String = "DoubleDamage"
+const TRAIT_HALF_HEALTH: String = "HalfHealth"
+const TRAIT_SLOW_MOVEMENT: String = "SlowMovement"
+const TRAIT_LAZY: String = "Lazy"
+const TRAIT_BERSERK: String = "Berserk"
+const TRAIT_STONE_BODY: String = "StoneBody"
+const COMBAT_TRAITS: GDScript = preload("res://scripts/combat_traits.gd")
 const AVAILABLE_TRAITS: Array[String] = [
 	TRAIT_DOUBLE_ATTACK,
 	TRAIT_FAST_MOVEMENT,
@@ -71,6 +77,11 @@ const AVAILABLE_TRAITS: Array[String] = [
 	TRAIT_LIFESTEAL,
 	TRAIT_DOUBLE_HP,
 	TRAIT_DOUBLE_DAMAGE,
+	TRAIT_HALF_HEALTH,
+	TRAIT_SLOW_MOVEMENT,
+	TRAIT_LAZY,
+	TRAIT_BERSERK,
+	TRAIT_STONE_BODY,
 ]
 const DEFAULT_LIFESTEAL_CHANCE: float = 1.0
 const DEFAULT_LIFESTEAL_HEAL_FRACTION: float = 0.15
@@ -84,6 +95,7 @@ enum MountType { GROUND, FLY, SWIM }
 @export_range(0.0, 512.0, 1.0) var death_explosion_radius: float = 128.0
 @export var death_explosion_damage: int = DEFAULT_DEATH_EXPLOSION_DAMAGE
 var current_traits: Array[String] = []
+@export var randomize_traits_on_spawn: bool = true
 var _revive_available: bool = true
 var _is_reviving: bool = false
 var _inherit_split_traits: bool = false
@@ -100,6 +112,7 @@ var state: State = State.PATROL
 var _patrol_direction: float = 1.0
 # Bộ đếm thời gian chờ giữa các đòn đánh.
 var _attack_cooldown_remaining: float = 0.0
+var _attack_sequence_active: bool = false
 # Giữ lực đẩy của đòn đánh trúng trước đó trong một khoảng ngắn.
 var _knockback_time_remaining: float = 0.0
 var _home_x: float = NAN
@@ -126,12 +139,13 @@ func _ready() -> void:
 		add_to_group(arena_team)
 		_ignore_same_team_collisions()
 	if not _inherit_split_traits:
-		_randomize_traits()
+		if randomize_traits_on_spawn:
+			_randomize_traits()
 		_apply_passive_traits()
 	else:
 		_apply_movement_trait()
 	($Sprite2D as Sprite2D).scale = scale_size
-	current_hp = max_hp
+	current_hp = COMBAT_TRAITS.starting_hp(max_hp, current_traits)
 	wall_check.add_exception(self)
 	ledge_check.add_exception(self)
 	wall_check.collision_mask = 1
@@ -187,15 +201,15 @@ func _randomize_traits() -> void:
 func _apply_passive_traits() -> void:
 	if current_traits.has(TRAIT_DOUBLE_HP):
 		max_hp *= 2
-	if current_traits.has(TRAIT_DOUBLE_DAMAGE):
-		attack_damage *= 2
+	attack_damage = COMBAT_TRAITS.damage(attack_damage, max_hp, current_traits)
+	attack_interval /= COMBAT_TRAITS.attack_speed_multiplier(current_traits)
 	_apply_movement_trait()
 
 
 func _apply_movement_trait() -> void:
-	if current_traits.has(TRAIT_FAST_MOVEMENT):
-		patrol_speed *= 1.5
-		movement_speed *= 1.5
+	var multiplier: float = COMBAT_TRAITS.movement_multiplier(current_traits)
+	patrol_speed *= multiplier
+	movement_speed *= multiplier
 
 
 func prepare_split_offspring(parent_monster: Monster) -> void:
@@ -206,6 +220,7 @@ func prepare_split_offspring(parent_monster: Monster) -> void:
 	attack_damage = maxi(roundi(parent_monster.attack_damage * 0.5), 1)
 	scale_size = parent_monster.scale_size * 0.5
 	split_count = parent_monster.split_count
+	attack_interval = parent_monster.attack_interval
 	_inherit_split_traits = true
 
 
@@ -322,7 +337,12 @@ func _process_patrol() -> void:
 
 	_update_rays(_patrol_direction)
 	if wall_check.is_colliding():
-		velocity.y = jump_velocity
+		var wall: Node = wall_check.get_collider() as Node
+		if wall != null and wall.is_in_group("map_boundaries"):
+			_patrol_direction = -_patrol_direction
+			_update_rays(_patrol_direction)
+		else:
+			velocity.y = jump_velocity
 	elif not ledge_check.is_colliding():
 		_patrol_direction = -_patrol_direction
 		_update_rays(_patrol_direction)
@@ -407,27 +427,11 @@ func _player_in_detection_zone() -> bool:
 func _find_closest_target() -> Node2D:
 	var closest_target: Node2D
 	var closest_distance_squared: float = INF
-	var target_groups: Array[String] = ["player", "pets"]
-	if not arena_team.is_empty():
-		target_groups = [_opposing_team_tag()]
-
-	for group_name: String in target_groups:
-		for candidate: Node in get_tree().get_nodes_in_group(group_name):
-			if not is_instance_valid(candidate) or candidate.is_queued_for_deletion():
-				continue
-			if not candidate.has_method("take_damage"):
-				continue
-			if candidate.has_method("is_alive") and not candidate.call("is_alive"):
-				continue
-
-			var target: Node2D = candidate as Node2D
-			if target == null:
-				continue
-
-			var distance_squared: float = global_position.distance_squared_to(target.global_position)
-			if distance_squared <= closest_distance_squared:
-				closest_distance_squared = distance_squared
-				closest_target = target
+	for target: Node2D in get_combat_targets():
+		var distance_squared: float = global_position.distance_squared_to(target.global_position)
+		if distance_squared <= closest_distance_squared:
+			closest_distance_squared = distance_squared
+			closest_target = target
 
 	return closest_target
 
@@ -490,26 +494,29 @@ func _get_mount_type() -> int:
 
 # Gây sát thương và khởi động cooldown sau mỗi đòn trúng mục tiêu.
 func _attack_target(target: Node2D) -> void:
-	if _is_reviving or current_hp <= 0:
+	if _attack_sequence_active or not is_alive() or is_queued_for_deletion():
 		return
-	if wind_dash_enabled:
-		var shots_this_attack: int = 2 if current_traits.has(TRAIT_DOUBLE_ATTACK) else 1
-		for shot_index: int in range(shots_this_attack):
-			if attack_count == 2:
-				_start_wind_dash(target)
-				break
-			_shoot_at(target)
-			attack_count += 1
-		_attack_cooldown_remaining = attack_interval
-		return
+	_attack_sequence_active = true
+	_attack_cooldown_remaining = attack_interval
 	var hit_count: int = 2 if current_traits.has(TRAIT_DOUBLE_ATTACK) else 1
 	for attack_index: int in range(hit_count):
+		if attack_index > 0:
+			await get_tree().create_timer(DOUBLE_ATTACK_DELAY, false, true).timeout
+		if not is_alive() or is_queued_for_deletion() or not _arena_active or status_effects.call("is_stunned") or is_dashing or city_charge.get("active"):
+			break
 		if not is_instance_valid(target) or target.is_queued_for_deletion():
 			break
 		if target.has_method("is_alive") and not target.call("is_alive"):
 			break
+		if attack_index > 0 and not _is_enemy_target(target):
+			break
+		if wind_dash_enabled and attack_count == 2:
+			_start_wind_dash()
+			break
 		if attack_style == "Ranged":
 			_shoot_at(target)
+			if wind_dash_enabled:
+				attack_count += 1
 		else:
 			target.call("take_damage", attack_damage, global_position, attack_effect, attack_effect_chance)
 			_try_lifesteal(attack_damage)
@@ -519,11 +526,12 @@ func _attack_target(target: Node2D) -> void:
 			city_charge.call("record_attack", target)
 			if city_charge.get("active"):
 				break
-	_attack_cooldown_remaining = attack_interval
+	_attack_sequence_active = false
 
 
-func _start_wind_dash(target: Node2D) -> void:
-	if not is_instance_valid(target) or target.is_queued_for_deletion():
+func _start_wind_dash() -> void:
+	var target: Node2D = COMBAT_TRAITS.farthest_target(self)
+	if target == null:
 		return
 	_dash_direction = (target.global_position - global_position).normalized()
 	if _dash_direction.is_zero_approx():
@@ -536,7 +544,7 @@ func _start_wind_dash(target: Node2D) -> void:
 
 func _process_wind_dash(delta: float) -> void:
 	_dash_time_remaining -= delta
-	velocity = _dash_direction * dash_speed
+	velocity = _dash_direction * dash_speed * COMBAT_TRAITS.movement_multiplier(current_traits)
 	move_and_slide()
 	_process_dash_collisions()
 	var terrain: ProceduralTerrain = get_tree().get_first_node_in_group("procedural_terrain") as ProceduralTerrain
@@ -553,9 +561,8 @@ func _process_dash_collisions() -> void:
 			if not is_dashing:
 				return
 	# Pet bodies use collision_layer 0, so include grouped targets with a radius check.
-	for pet_node: Node in get_tree().get_nodes_in_group("pets"):
-		var pet: Node2D = pet_node as Node2D
-		if pet != null and global_position.distance_to(pet.global_position) <= 38.0:
+	for pet: Node2D in get_combat_targets():
+		if global_position.distance_to(pet.global_position) <= 38.0:
 			_apply_wind_dash_hit(pet)
 			if not is_dashing:
 				return
@@ -582,31 +589,25 @@ func _finish_wind_dash() -> void:
 
 func _chain_lightning(primary_target: Node2D) -> void:
 	var chain_damage: int = maxi(roundi(attack_damage * chain_lightning_damage_fraction), 1)
-	var groups: Array[String] = ["player", "pets"]
-	if not arena_team.is_empty():
-		groups = [_opposing_team_tag()]
-	for group_name: String in groups:
-		for candidate: Node in get_tree().get_nodes_in_group(group_name):
-			var target: Node2D = candidate as Node2D
-			if target == null or target == primary_target or target.is_queued_for_deletion():
-				continue
-			if target.has_method("is_alive") and not target.call("is_alive"):
-				continue
-			if primary_target.global_position.distance_squared_to(target.global_position) > chain_lightning_radius * chain_lightning_radius:
-				continue
-			if target.has_method("take_damage"):
-				passive_vfx.call("play_chain_lightning", primary_target.global_position, target.global_position)
-				target.call("take_damage", chain_damage, global_position)
+	for target: Node2D in get_combat_targets():
+		if target == primary_target or primary_target.global_position.distance_squared_to(target.global_position) > chain_lightning_radius * chain_lightning_radius:
+			continue
+		passive_vfx.call("play_chain_lightning", primary_target.global_position, target.global_position)
+		target.call("take_damage", chain_damage, global_position)
 
 
 # Cùng loại đạn với Pet Ranged, nhưng nhắm Player/Pet và nhuộm màu khác.
 func _shoot_at(target: Node2D) -> void:
-	var fireball: FireballProjectile = FIREBALL_SCENE.instantiate()
+	# Load at runtime to avoid the Monster -> projectile -> terrain -> Monster preload cycle.
+	var fireball_scene: PackedScene = load("res://scenes/fireball.tscn")
+	var fireball: FireballProjectile = fireball_scene.instantiate()
 	fireball.hostile = true
 	fireball.arena_team = arena_team
 	fireball.damage = attack_damage
 	fireball.effect_type = attack_effect
 	fireball.effect_chance = attack_effect_chance
+	fireball.friendly_fire = COMBAT_TRAITS.is_berserk(self)
+	fireball.damage_source = self
 	fireball.modulate = Color(1.0, 0.55, 0.9)
 	if current_traits.has(TRAIT_LIFESTEAL):
 		fireball.set_lifesteal_source(self, lifesteal_chance, lifesteal_heal_fraction)
@@ -716,18 +717,9 @@ func _try_lifesteal(damage: int) -> void:
 
 func _explode_on_death() -> void:
 	passive_vfx.call("play_explosion", death_explosion_radius)
-	var groups: Array[String] = ["player", "pets"]
-	if not arena_team.is_empty():
-		groups = [_opposing_team_tag()]
-	for group_name: String in groups:
-		for target: Node in get_tree().get_nodes_in_group(group_name):
-			var target_2d: Node2D = target as Node2D
-			if target_2d == null or target_2d.is_queued_for_deletion():
-				continue
-			if global_position.distance_to(target_2d.global_position) > death_explosion_radius:
-				continue
-			if target_2d.has_method("take_damage"):
-				target_2d.call("take_damage", death_explosion_damage, global_position)
+	for target: Node2D in get_combat_targets():
+		if global_position.distance_to(target.global_position) <= death_explosion_radius:
+			target.call("take_damage", death_explosion_damage, global_position)
 
 
 func is_alive() -> bool:
@@ -739,9 +731,11 @@ func is_reviving() -> bool:
 
 
 func _is_enemy_target(target: Node) -> bool:
-	if not arena_team.is_empty():
-		return target.is_in_group(_opposing_team_tag())
-	return target.is_in_group("player") or target.is_in_group("pets")
+	return COMBAT_TRAITS.can_target(self, target)
+
+
+func get_combat_targets() -> Array[Node2D]:
+	return COMBAT_TRAITS.targets(self)
 
 
 # Đồng bộ ProgressBar với HP hiện tại, kể cả khi max_hp được chỉnh trong Inspector.

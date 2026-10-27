@@ -14,7 +14,7 @@ func _run() -> void:
 	_original_save_path = str(_storage.get("save_path"))
 	_storage.set("save_path", TEST_SAVE_PATH)
 	_storage.call("reset_progress")
-	_storage.set("gold", 7)
+	_storage.set("gold", 2)
 	if float(_storage.get("CAPTURE_SUCCESS_CHANCE")) != 0.5:
 		_fail("Capture chance must be fixed at 50%.")
 		return
@@ -38,6 +38,26 @@ func _run() -> void:
 		_fail("Every actual Monster should be listed once, including separate instances of the same species.")
 		return
 	var expected_pet: Dictionary = monsters[1].get_pet_data().duplicate(true)
+	monsters[0].current_traits.clear()
+	monsters[0].die()
+	monsters.remove_at(0)
+	await process_frame
+	var offspring_count: int = 0
+	for monster_node: Node in get_nodes_in_group("monsters"):
+		var offspring: Monster = monster_node as Monster
+		if offspring.split_count == 0:
+			continue
+		offspring.set_physics_process(false)
+		monsters.append(offspring)
+		offspring_count += 1
+		terrain.register_capture_candidate(offspring)
+	if offspring_count != 2 or (terrain.get("_capture_candidates") as Array).size() != 3:
+		_fail("Split slime offspring must remain in combat without adding capture options.")
+		return
+	for candidate: Dictionary in terrain.get("_capture_candidates"):
+		if int(candidate.get("split_count", 0)) != 0:
+			_fail("Capture candidates must include original Monsters only, never split offspring.")
+			return
 	if not (_storage.get("collection") as Array).is_empty():
 		_fail("Encountered Monsters should not enter the collection before post-battle capture.")
 		return
@@ -66,6 +86,9 @@ func _run() -> void:
 	if (rewards.get("_candidates") as Array).size() != 3 or not (_storage.get("pending_capture_candidates") as Array).is_empty():
 		_fail("The reward screen should consume only this stage's encountered Monsters.")
 		return
+	if (rewards.get("_capture_buttons") as Array).size() != 3:
+		_fail("Capture rewards must offer only the original Monsters, not the two split slimes.")
+		return
 	await process_frame
 	await process_frame
 	var finish_button: Button = rewards.get("_finish_button") as Button
@@ -82,7 +105,7 @@ func _run() -> void:
 		_fail("Each Monster's info button should show its full stats and trait descriptions.")
 		return
 	rewards.call("_try_capture", 1)
-	if int(_storage.get("gold")) != 7 or (rewards.get("_attempted") as Array).has(true):
+	if int(_storage.get("gold")) != 2 or (rewards.get("_attempted") as Array).has(true):
 		_fail("Viewing Monster details must not spend gold or allow accidental capture behind the modal.")
 		return
 	var close_button: Button = rewards.get("_info_close_button") as Button
@@ -109,10 +132,13 @@ func _run() -> void:
 	rng.seed = _find_seed(false)
 	rewards.call("_try_capture", 0)
 	rewards.call("_try_capture", 0)
-	if int(_storage.get("gold")) != 4 or not (_storage.get("collection") as Array).is_empty():
-		_fail("A failed capture must cost three gold and never allow another attempt on that Monster.")
+	if int(_storage.get("gold")) != 1 or not (_storage.get("collection") as Array).is_empty():
+		_fail("A failed capture must cost one gold and never allow another attempt on that Monster.")
 		return
 	var capture_buttons: Array = rewards.get("_capture_buttons")
+	if (capture_buttons[1] as Button).disabled or not (capture_buttons[1] as Button).text.contains("1 vàng"):
+		_fail("One gold should enable an unattempted capture and display its one-gold cost.")
+		return
 	if not (capture_buttons[0] as Button).disabled:
 		_fail("A failed Monster's capture button must stay disabled.")
 		return
@@ -124,8 +150,8 @@ func _run() -> void:
 	rng.seed = _find_seed(true)
 	rewards.call("_try_capture", 1)
 	rewards.call("_try_capture", 1)
-	if int(_storage.get("gold")) != 1 or (_storage.get("collection") as Array).size() != 1:
-		_fail("A successful capture must cost three gold and save that Monster exactly once.")
+	if int(_storage.get("gold")) != 0 or (_storage.get("collection") as Array).size() != 1:
+		_fail("A successful capture must cost one gold and save that Monster exactly once.")
 		return
 	var saved_pet: Dictionary = _storage.call("get_runtime_pet", 0) as Dictionary
 	for field: String in ["name", "max_hp", "attack_damage", "mount_type", "current_traits", "split_on_death"]:
@@ -134,11 +160,11 @@ func _run() -> void:
 			return
 	rewards.call("_try_capture", 2)
 	var attempts: Array = rewards.get("_attempted")
-	if int(_storage.get("gold")) != 1 or bool(attempts[2]):
+	if int(_storage.get("gold")) != 0 or bool(attempts[2]) or not (capture_buttons[2] as Button).disabled:
 		_fail("Insufficient gold must not spend money or consume a Monster's capture attempt.")
 		return
 	_storage.call("load_data")
-	if int(_storage.get("gold")) != 1 or (_storage.get("collection") as Array).size() != 1:
+	if int(_storage.get("gold")) != 0 or (_storage.get("collection") as Array).size() != 1:
 		_fail("Gold spent and successful captures should survive reloading the save.")
 		return
 	rewards.call("_finish")

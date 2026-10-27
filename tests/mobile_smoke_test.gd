@@ -94,6 +94,41 @@ func _run() -> void:
 	if player._is_attacking:
 		_fail("Emulated mouse clicks on mobile UI must not trigger melee attacks.")
 		return
+	var world_position: Vector2 = viewport_rect.size * 0.5
+	_mouse_click(world_position, InputEvent.DEVICE_ID_EMULATION)
+	await physics_frame
+	await physics_frame
+	if player._is_attacking:
+		_fail("Mouse events emulated from touch must not trigger melee attacks.")
+		return
+	_mouse_click(stick_center)
+	await physics_frame
+	await physics_frame
+	if player._is_attacking:
+		_fail("Clicking the movement stick must not trigger melee attacks.")
+		return
+	_mouse_click(jump_position)
+	await physics_frame
+	await physics_frame
+	if player._is_attacking:
+		_fail("Clicking Jump must not trigger melee attacks.")
+		return
+	_mouse_click(world_position)
+	await physics_frame
+	await physics_frame
+	if not player._is_attacking:
+		_fail("A physical left click in the world should attack with mobile controls enabled.")
+		return
+	await create_timer(player.melee_attack_duration + 0.1).timeout
+	player._touch_enabled = false
+	_mouse_click(world_position)
+	await physics_frame
+	await physics_frame
+	if not player._is_attacking:
+		_fail("Physical left clicks should still trigger desktop melee attacks.")
+		return
+	player._touch_enabled = true
+	await create_timer(player.melee_attack_duration + 0.1).timeout
 	var attack_position: Vector2 = controls.get_node("Attack").position + Vector2(40.0, 40.0)
 	_touch(2, attack_position, true)
 	await physics_frame
@@ -180,6 +215,7 @@ func _run() -> void:
 		return
 	menu.call("_layout_responsive_ui", viewport_rect.size)
 	menu._open_inventory()
+	await menu.inventory_panel.ui_opened
 	await process_frame
 	await process_frame
 	if not viewport_rect.encloses(menu.inventory_panel.get_global_rect()) or menu.close_button.size.y < 48.0:
@@ -190,10 +226,12 @@ func _run() -> void:
 		return
 	await _capture_screenshot("inventory")
 	menu.notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
+	await menu.inventory_panel.ui_closed
 	if menu.inventory_panel.visible:
 		_fail("Android Back should close the inventory.")
 		return
 	menu.call("_on_play_pressed")
+	await menu.inventory_panel.ui_opened
 	await process_frame
 	await process_frame
 	await process_frame
@@ -207,6 +245,7 @@ func _run() -> void:
 		return
 	await _capture_screenshot("play-loadout")
 	menu.call("_close_inventory")
+	await menu.inventory_panel.ui_closed
 	menu.debug_button.pressed.emit()
 	await process_frame
 	await process_frame
@@ -234,6 +273,18 @@ func _touch(finger: int, position: Vector2, pressed: bool) -> void:
 	event.pressed = pressed
 	Input.parse_input_event(event)
 	Input.flush_buffered_events()
+
+
+func _mouse_click(position: Vector2, device: int = 0) -> void:
+	for pressed: bool in [true, false]:
+		var event: InputEventMouseButton = InputEventMouseButton.new()
+		event.device = device
+		event.button_index = MOUSE_BUTTON_LEFT
+		event.position = root.get_screen_transform() * position
+		event.global_position = event.position
+		event.pressed = pressed
+		Input.parse_input_event(event)
+		Input.flush_buffered_events()
 
 
 func _drag(finger: int, start_position: Vector2, end_position: Vector2) -> void:

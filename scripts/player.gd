@@ -87,6 +87,17 @@ func _ready() -> void:
 	_update_health_bar()
 
 
+func _unhandled_input(event: InputEvent) -> void:
+	if not _touch_enabled or _is_dead or status_effects.call("is_stunned"):
+		return
+	if event is InputEventMouseButton and event.device != InputEvent.DEVICE_ID_EMULATION and event.is_action_pressed("melee_attack"):
+		var mobile_controls: MOBILE_CONTROLS = get_tree().get_first_node_in_group("mobile_controls") as MOBILE_CONTROLS
+		if mobile_controls != null and mobile_controls.is_pointer_over_button(event.position):
+			return
+		_start_melee_attack()
+		get_viewport().set_input_as_handled()
+
+
 # _physics_process chạy mỗi khung vật lý cố định; delta là thời gian giữa 2 khung (giây).
 func _physics_process(delta: float) -> void:
 	# Kiểm tra biome hiện tại để chọn vật lý bơi hoặc vật lý đi bộ.

@@ -206,6 +206,9 @@ func _refresh_roster() -> void:
 func _select_pet(collection_index: int) -> void:
 	if _confirming or _closing or _result_screen.visible:
 		return
+	if int(PetStorage.collection[collection_index].get("fusion_count", 0)) >= PetStorage.MAX_FUSION_COUNT:
+		_status.text = "Thú đã đạt giới hạn %d lần dung hợp." % PetStorage.MAX_FUSION_COUNT
+		return
 	if _selected_indices.has(collection_index):
 		_selected_indices.erase(collection_index)
 	elif _selected_indices.size() >= 2:
@@ -239,6 +242,9 @@ func _toggle_details(collection_index: int) -> void:
 func _refresh_selection() -> void:
 	for collection_index: int in range(_pet_buttons.size()):
 		_pet_buttons[collection_index].set_pressed_no_signal(_selected_indices.has(collection_index))
+		var at_limit: bool = int(PetStorage.collection[collection_index].get("fusion_count", 0)) >= PetStorage.MAX_FUSION_COUNT
+		_pet_buttons[collection_index].disabled = at_limit
+		_pet_buttons[collection_index].tooltip_text = "Đã đạt giới hạn %d lần dung hợp." % PetStorage.MAX_FUSION_COUNT if at_limit else ""
 		var item: Control = _details_labels[collection_index].get_parent() as Control
 		item.visible = _selected_indices.is_empty() or _species(collection_index) == _species(_selected_indices[0])
 	for slot_index: int in range(2):
@@ -253,24 +259,38 @@ func _refresh_selection() -> void:
 			slot.icon = pet.get("texture") as Texture2D
 			slot.text = "%s\nHP %d | ATK %d" % [pet.get("name", "Pet"), pet.get("max_hp", 0), pet.get("attack_damage", 0)]
 			slot.tooltip_text = preload("res://scripts/pet_details.gd").build_tooltip(pet)
-	_combine_button.disabled = _selected_indices.size() != 2
-	_status.text = "%d / 2 thú cùng loài | Miễn phí" % _selected_indices.size()
+	_combine_button.disabled = not _can_combine_selection()
+	_status.text = "%d / 2 thú cùng loài | Miễn phí\nMỗi lần: +1%% HP và sát thương cơ bản của loài, tối đa %d lần.\nSố lần mới = số lần cao hơn của hai thú + 1. Thú đạt giới hạn không thể dùng làm nguyên liệu." % [_selected_indices.size(), PetStorage.MAX_FUSION_COUNT]
+
+
+func _can_combine_selection() -> bool:
+	if _selected_indices.size() != 2:
+		return false
+	for index: int in _selected_indices:
+		if index < 0 or index >= PetStorage.collection.size() or int(PetStorage.collection[index].get("fusion_count", 0)) >= PetStorage.MAX_FUSION_COUNT:
+			return false
+	return true
 
 
 func _request_combine() -> void:
-	if _selected_indices.size() != 2 or _confirming or _closing or _result_screen.visible:
+	if not _can_combine_selection() or _confirming or _closing or _result_screen.visible:
 		return
 	var first: Dictionary = PetStorage.collection[_selected_indices[0]]
 	var second: Dictionary = PetStorage.collection[_selected_indices[1]]
-	_confirm.dialog_text = "Dung hợp %s và %s?\nHai thú nguyên liệu sẽ bị xóa và thay bằng một thú mới.\nChỉ số gốc kế thừa từ thú A; đặc tính được chọn ngẫu nhiên." % [first.get("name", "Pet"), second.get("name", "Pet")]
+	var fusion_count: int = maxi(int(first.get("fusion_count", 0)), int(second.get("fusion_count", 0))) + 1
+	_confirm.dialog_text = "Dung hợp %s và %s?\nHai thú nguyên liệu sẽ bị xóa và thay bằng một thú mới.\nSố lần dung hợp: %d (+%d%% HP và sát thương cơ bản của loài).\nĐặc tính được chọn ngẫu nhiên." % [first.get("name", "Pet"), second.get("name", "Pet"), fusion_count, fusion_count]
 	_confirming = true
 	_confirm.popup_centered_clamped(Vector2i(560, 220), 0.9)
 
 
 func _confirm_combine() -> void:
-	if not _confirming or _selected_indices.size() != 2:
+	if not _confirming:
 		return
 	_confirming = false
+	if not _can_combine_selection():
+		_refresh_selection()
+		_status.text = "Không thể dung hợp: thú đã đạt giới hạn hoặc lựa chọn không còn hợp lệ."
+		return
 	var result: Dictionary = PetStorage.CombinePets(_selected_indices[0], _selected_indices[1])
 	_selected_indices.clear()
 	_refresh_roster()

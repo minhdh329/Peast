@@ -19,6 +19,9 @@ func _initialize() -> void:
 
 
 func _run() -> void:
+	for direction: float in [-1.0, 1.0]:
+		if not await _test_patrol_boundary(direction):
+			return
 	var world: Node2D = Node2D.new()
 	root.add_child(world)
 	current_scene = world
@@ -90,6 +93,36 @@ func _make_target(world: Node2D, position: Vector2) -> Target:
 	world.add_child(target)
 	target.position = position
 	return target
+
+
+func _test_patrol_boundary(direction: float) -> bool:
+	var world: Node2D = Node2D.new()
+	root.add_child(world)
+	current_scene = world
+	var terrain: ProceduralTerrain = ProceduralTerrain.new()
+	terrain.randomize_biome_on_spawn = false
+	terrain.spawn_monsters_on_ready = false
+	world.add_child(terrain)
+	terrain.clear()
+	terrain._generate_floor_and_walls(0)
+	var monster: Monster = (load("res://scenes/monster.tscn") as PackedScene).instantiate() as Monster
+	monster.randomize_traits_on_spawn = false
+	world.add_child(monster)
+	var width: float = terrain.map_width_cells * terrain.TILE_SIZE.x
+	var start_x: float = 60.0 if direction < 0.0 else width - 60.0
+	monster.position = Vector2(start_x, terrain.floor_row * terrain.TILE_SIZE.y - monster.body_radius())
+	monster._patrol_direction = direction
+	var jumps: int = 0
+	for frame_index: int in range(240):
+		await physics_frame
+		if monster.velocity.y < -100.0:
+			jumps += 1
+	if jumps > 0 or (monster.position.x - start_x) * direction > -40.0 or monster.state != Monster.State.PATROL:
+		_fail("Patrolling Monsters must turn away from the %s map boundary without jumping in place: x=%s, start=%s, jumps=%s." % ["left" if direction < 0.0 else "right", monster.position.x, start_x, jumps])
+		return false
+	world.queue_free()
+	await process_frame
+	return true
 
 
 func _test_multi_level_chase(use_pet: bool, ranged: bool = false) -> bool:

@@ -4,9 +4,9 @@ extends Node
 const SAVE_PATH := "user://pet_save.json"
 const TEAM_SIZE := 1
 const ARENA_TEAM_SIZE: int = 5
+const MAX_FUSION_COUNT: int = 100
 const STARTING_GOLD: int = 3
-const CAPTURE_ENTRY_COST: int = 3
-const CAPTURE_ATTEMPT_COST: int = 3
+const CAPTURE_ATTEMPT_COST: int = 1
 const CAPTURE_SUCCESS_CHANCE: float = 0.5
 const ARENA_WIN_GOLD: int = 5
 const ARENA_LOSS_GOLD: int = 2
@@ -14,6 +14,8 @@ signal gold_changed(balance: int)
 
 var gold: int = STARTING_GOLD
 var save_path: String = SAVE_PATH
+var last_capture_biome: int = -1
+var capture_biome_streak: int = 0
 # Save cũ chưa có movement_mode: suy ra từ hình của loài.
 const LEGACY_MOVEMENT_MODES: Dictionary = {
 	"crab.png": "Swim", "jelly.png": "Swim", "bird.png": "Fly", "cloud_slime.png": "Fly",
@@ -51,6 +53,8 @@ func load_data() -> void:
 	arena_team_indices.clear()
 	mount_pet_index = -1
 	gold = STARTING_GOLD
+	last_capture_biome = -1
+	capture_biome_streak = 0
 	if not FileAccess.file_exists(save_path):
 		return
 	var file: FileAccess = FileAccess.open(save_path, FileAccess.READ)
@@ -61,6 +65,8 @@ func load_data() -> void:
 		push_warning("File lưu Pet bị hỏng, bỏ qua.")
 		return
 	gold = maxi(0, int(parsed.get("gold", STARTING_GOLD)))
+	last_capture_biome = int(parsed.get("last_capture_biome", -1))
+	capture_biome_streak = clampi(int(parsed.get("capture_biome_streak", 0)), 0, 2) if last_capture_biome >= 0 else 0
 	for entry: Variant in parsed.get("collection", []):
 		if entry is Dictionary and _is_valid_entry(entry):
 			collection.append(entry)
@@ -82,7 +88,21 @@ func save_data() -> void:
 	if file == null:
 		push_warning("Không thể ghi file lưu Pet: %s" % error_string(FileAccess.get_open_error()))
 		return
-	file.store_string(JSON.stringify({"collection": collection, "team": team, "mount_pet_index": mount_pet_index, "gold": gold, "arena_team_indices": arena_team_indices}, "\t"))
+	file.store_string(JSON.stringify({"collection": collection, "team": team, "mount_pet_index": mount_pet_index, "gold": gold, "arena_team_indices": arena_team_indices, "last_capture_biome": last_capture_biome, "capture_biome_streak": capture_biome_streak}, "\t"))
+
+
+func select_capture_biome(pool: Array[int], rng: RandomNumberGenerator) -> int:
+	var eligible: Array[int] = pool.duplicate()
+	if capture_biome_streak >= 2:
+		eligible.erase(last_capture_biome)
+	if eligible.is_empty():
+		push_warning("Không có map hợp lệ để chọn mà không lặp quá hai lần.")
+		return -1
+	var selected: int = eligible[rng.randi_range(0, eligible.size() - 1)]
+	capture_biome_streak = capture_biome_streak + 1 if selected == last_capture_biome else 1
+	last_capture_biome = selected
+	save_data()
+	return selected
 
 
 func set_arena_team(indices: Array[int]) -> bool:
@@ -199,10 +219,17 @@ func CombinePets(index_A: int, index_B: int) -> Dictionary:
 		return {}
 	var pet_a: Dictionary = collection[index_A]
 	var pet_b: Dictionary = collection[index_B]
+	if int(pet_a.get("fusion_count", 0)) >= MAX_FUSION_COUNT or int(pet_b.get("fusion_count", 0)) >= MAX_FUSION_COUNT:
+		push_warning("Thú đã đạt giới hạn %d lần dung hợp, không thể dùng làm nguyên liệu!" % MAX_FUSION_COUNT)
+		return {}
 	var species_a: String = str(pet_a.get("type", pet_a.get("name", "")))
 	var species_b: String = str(pet_b.get("type", pet_b.get("name", "")))
 	if species_a.is_empty() or species_a != species_b:
 		push_warning("Chỉ được ghép thú cùng loài!")
+		return {}
+	var base_stats: Dictionary = _get_species_base_stats(species_a)
+	if base_stats.is_empty():
+		push_warning("Không tìm thấy chỉ số cơ bản của loài: %s" % species_a)
 		return {}
 
 	# Gộp traits của hai thú; chỉ thêm tên chưa tồn tại để loại mọi đặc tính trùng.
@@ -223,15 +250,12 @@ func CombinePets(index_A: int, index_B: int) -> Dictionary:
 
 	var combined_pet: Dictionary = pet_a.duplicate(true)
 	combined_pet["type"] = species_a
-	var parent_traits: Array = pet_a.get("current_traits", [])
-	var base_hp: int = int(pet_a["max_hp"])
-	var base_attack: int = int(pet_a["attack_damage"])
-	if parent_traits.has(Monster.TRAIT_DOUBLE_HP):
-		base_hp = maxi(roundi(base_hp / 2.0), 1)
-	if parent_traits.has(Monster.TRAIT_DOUBLE_DAMAGE):
-		base_attack = maxi(roundi(base_attack / 2.0), 1)
-	combined_pet["max_hp"] = base_hp * (2 if combined_traits.has(Monster.TRAIT_DOUBLE_HP) else 1)
-	combined_pet["attack_damage"] = base_attack * (2 if combined_traits.has(Monster.TRAIT_DOUBLE_DAMAGE) else 1)
+	var fusion_count: int = maxi(int(pet_a.get("fusion_count", 0)), int(pet_b.get("fusion_count", 0))) + 1
+	var fusion_multiplier: float = 1.0 + fusion_count / 100.0
+	combined_pet["fusion_count"] = fusion_count
+	combined_pet["max_hp"] = roundi(int(base_stats["max_hp"]) * fusion_multiplier * (2 if combined_traits.has(Monster.TRAIT_DOUBLE_HP) else 1))
+	combined_pet["attack_damage"] = Monster.COMBAT_TRAITS.damage(int(base_stats["attack_damage"]) * fusion_multiplier, int(combined_pet["max_hp"]), combined_traits)
+	combined_pet["attack_interval"] = float(base_stats["attack_interval"]) / Monster.COMBAT_TRAITS.attack_speed_multiplier(combined_traits)
 	combined_pet["current_traits"] = combined_traits
 	combined_pet["revive_available"] = true
 	for transient_field: String in ["current_hp", "fainted", "city_charge_count", "city_charge_ready"]:
@@ -244,12 +268,33 @@ func CombinePets(index_A: int, index_B: int) -> Dictionary:
 	return get_runtime_pet(collection.size() - 1)
 
 
+func _get_species_base_stats(species: String) -> Dictionary:
+	# Nạp khi dung hợp để tránh vòng preload Monster -> Terrain -> Monster.
+	var terrain_script: GDScript = load("res://scripts/procedural_terrain.gd") as GDScript
+	var monster_scenes: Dictionary = terrain_script.get_script_constant_map()["MONSTER_SCENES"]
+	var scenes: Array[PackedScene] = [load("res://scenes/monster.tscn") as PackedScene]
+	for pool: Array in monster_scenes.values():
+		for scene: PackedScene in pool:
+			scenes.append(scene)
+	for scene: PackedScene in scenes:
+		# Đọc cấu hình loài trước _ready(), chưa có chỉ số cộng từ đặc tính.
+		var monster: Monster = scene.instantiate() as Monster
+		var matches_species: bool = monster.monster_name == species
+		var stats: Dictionary = {"max_hp": monster.max_hp, "attack_damage": monster.attack_damage, "attack_interval": monster.attack_interval}
+		monster.free()
+		if matches_species:
+			return stats
+	return {}
+
+
 func reset_progress() -> void:
 	collection.clear()
 	team.clear()
 	arena_team_indices.clear()
 	mount_pet_index = -1
 	gold = STARTING_GOLD
+	last_capture_biome = -1
+	capture_biome_streak = 0
 	gold_changed.emit(gold)
 	if FileAccess.file_exists(save_path):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path))
@@ -272,6 +317,7 @@ func get_runtime_pet(collection_index: int) -> Dictionary:
 	runtime["sprite_scale"] = Vector2(float(saved["sprite_scale"][0]), float(saved["sprite_scale"][1]))
 	runtime["max_hp"] = int(saved["max_hp"])
 	runtime["attack_damage"] = int(saved["attack_damage"])
+	runtime["fusion_count"] = int(saved.get("fusion_count", 0))
 	runtime["attack_interval"] = float(saved["attack_interval"])
 	runtime["attack_range"] = float(saved["attack_range"])
 	var movement_mode: String = str(saved.get("movement_mode", LEGACY_MOVEMENT_MODES.get(str(saved["texture_path"]).get_file(), "Ground")))
@@ -355,6 +401,7 @@ func _to_saved(pet_data: Dictionary) -> Dictionary:
 		"sprite_scale": [sprite_scale.x, sprite_scale.y],
 		"max_hp": int(pet_data.get("max_hp", 50)),
 		"attack_damage": int(pet_data.get("attack_damage", 5)),
+		"fusion_count": int(pet_data.get("fusion_count", 0)),
 		"attack_interval": float(pet_data.get("attack_interval", 1.2)),
 		"attack_range": float(pet_data.get("attack_range", 38.0)),
 		"movement_mode": str(pet_data.get("movement_mode", "Ground")),

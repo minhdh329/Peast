@@ -6,6 +6,8 @@ func _initialize() -> void:
 
 
 func _run() -> void:
+	if not _test_capture_biome_repeat_limit():
+		return
 	if not _test_responsive_terrain_fit():
 		return
 	if ProceduralTerrain.RANDOM_BIOMES.size() != 5 or not ProceduralTerrain.RANDOM_BIOMES.has(ProceduralTerrain.Biome.CITY):
@@ -131,6 +133,68 @@ func _test_city_underpasses(terrain: ProceduralTerrain, player: CharacterBody2D,
 	player.set_physics_process(was_physics_processing)
 	if not passed_both_buildings:
 		_fail("Player should move horizontally on the ground under both city buildings.")
+		return false
+	return true
+
+
+func _test_capture_biome_repeat_limit() -> bool:
+	var storage: Node = (load("res://scripts/pet_storage.gd") as Script).new() as Node
+	var save_path: String = "user://biome_selection_smoke_test.json"
+	storage.set("save_path", save_path)
+	var rng: RandomNumberGenerator = RandomNumberGenerator.new()
+	rng.seed = 20261020
+	var previous: int = -1
+	var streak: int = 0
+	var seen: Dictionary = {}
+	var failure: String = ""
+	for draw_index: int in range(256):
+		var selected: int = int(storage.call("select_capture_biome", ProceduralTerrain.RANDOM_BIOMES, rng))
+		streak = streak + 1 if selected == previous else 1
+		if not ProceduralTerrain.RANDOM_BIOMES.has(selected) or streak > 2:
+			failure = "Random capture maps must stay in the pool and never repeat more than twice."
+			break
+		previous = selected
+		seen[selected] = true
+		storage.call("load_data")
+		if int(storage.get("last_capture_biome")) != selected or int(storage.get("capture_biome_streak")) != streak:
+			failure = "Map repeat history must survive restarting or reloading the save."
+			break
+	if failure.is_empty() and seen.size() != ProceduralTerrain.RANDOM_BIOMES.size():
+		failure = "Every map should remain reachable with the repeat limiter enabled."
+	for blocked: int in ProceduralTerrain.RANDOM_BIOMES:
+		for seed_value: int in range(32):
+			storage.set("last_capture_biome", blocked)
+			storage.set("capture_biome_streak", 2)
+			rng.seed = seed_value
+			var selected: int = int(storage.call("select_capture_biome", ProceduralTerrain.RANDOM_BIOMES, rng))
+			if selected == blocked or int(storage.get("capture_biome_streak")) != 1:
+				failure = "After two repeats, the next capture map must differ and start a new streak."
+	var second_repeat_allowed: bool = false
+	for seed_value: int in range(32):
+		storage.set("last_capture_biome", ProceduralTerrain.Biome.OCEAN)
+		storage.set("capture_biome_streak", 1)
+		rng.seed = seed_value
+		var selected: int = int(storage.call("select_capture_biome", ProceduralTerrain.RANDOM_BIOMES, rng))
+		if selected == ProceduralTerrain.Biome.OCEAN:
+			second_repeat_allowed = true
+	if not second_repeat_allowed:
+		failure = "A second consecutive visit should still be permitted by the random picker."
+	var legacy_file: FileAccess = FileAccess.open(save_path, FileAccess.WRITE)
+	legacy_file.store_string(JSON.stringify({"collection": [], "team": []}))
+	legacy_file.close()
+	storage.call("load_data")
+	if int(storage.get("last_capture_biome")) != -1 or int(storage.get("capture_biome_streak")) != 0:
+		failure = "Legacy saves should start without a previous map streak."
+	storage.set("last_capture_biome", ProceduralTerrain.Biome.OCEAN)
+	storage.set("capture_biome_streak", 2)
+	storage.call("reset_progress")
+	if int(storage.get("last_capture_biome")) != -1 or int(storage.get("capture_biome_streak")) != 0:
+		failure = "Resetting progress should also clear capture map history."
+	storage.free()
+	if FileAccess.file_exists(save_path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path))
+	if not failure.is_empty():
+		_fail(failure)
 		return false
 	return true
 

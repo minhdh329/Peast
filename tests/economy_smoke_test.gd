@@ -45,40 +45,49 @@ func _run() -> void:
 	root.add_child(menu)
 	current_scene = menu
 	menu.call("_on_play_pressed")
+	await menu.inventory_panel.ui_opened
 	menu.call("_close_inventory")
+	await menu.inventory_panel.ui_closed
 	if int(_storage.get("gold")) != 10:
 		_fail("Opening and cancelling Play must not charge an entry fee.")
 		return
-	_storage.set("gold", 2)
-	menu.call("_on_play_pressed")
-	menu.call("_start_game")
-	var entry_button: Button = menu.get_node("%PlayStartButton") as Button
-	var balance_label: Label = menu.get_node("%PanelGoldBalance") as Label
-	if not entry_button.disabled or int(_storage.get("gold")) != 2 or not balance_label.text.contains("Thiếu 1") or current_scene != menu:
-		_fail("Insufficient gold should disable entry, display the shortfall, and preserve the balance.")
-		return
-	_storage.call("add_gold", 8)
-	if entry_button.disabled or not entry_button.text.contains("3"):
-		_fail("Entry should show its cost and become available when the balance is sufficient.")
-		return
-	menu.call("_start_game")
-	menu.call("_start_game")
-	await process_frame
-	await process_frame
-	if current_scene == null or current_scene.scene_file_path != "res://main.tscn" or int(_storage.get("gold")) != 7:
-		_fail("Confirmed capture entry should charge exactly three gold once, even with repeated presses.")
-		return
-	var hud: Node = current_scene.get_node("HotBar")
-	var hud_label: Label = hud.get("_gold_label") as Label
-	if not hud_label.text.contains("7"):
-		_fail("Gameplay HUD should display the remaining gold.")
-		return
-	current_scene.queue_free()
-	await process_frame
-	_storage.call("load_data")
-	if int(_storage.get("gold")) != 7:
-		_fail("The capture entry deduction should persist to disk.")
-		return
+	for balance: int in [0, 10]:
+		_storage.set("gold", balance)
+		_storage.call("save_data")
+		menu.call("_on_play_pressed")
+		await menu.inventory_panel.ui_opened
+		var entry_button: Button = menu.get_node("%PlayStartButton") as Button
+		var balance_label: Label = menu.get_node("%PanelGoldBalance") as Label
+		if entry_button.disabled or not entry_button.text.contains("Miễn phí") or balance_label.text.contains("Thiếu"):
+			_fail("Capture entry should be free and available even with zero gold.")
+			return
+		_storage.set("last_capture_biome", 2)
+		_storage.set("capture_biome_streak", 2)
+		menu.call("_start_game")
+		menu.call("_start_game")
+		await process_frame
+		await process_frame
+		if current_scene == null or current_scene.scene_file_path != "res://main.tscn" or int(_storage.get("gold")) != balance:
+			_fail("Capture entry must preserve gold, including with repeated presses.")
+			return
+		if int(current_scene.get_node("Terrain").get("biome")) == 2 or int(_storage.get("capture_biome_streak")) != 1:
+			_fail("Real Play entry must exclude Ocean after two consecutive Ocean visits.")
+			return
+		var hud: Node = current_scene.get_node("HotBar")
+		var hud_label: Label = hud.get("_gold_label") as Label
+		if not hud_label.text.contains(str(balance)):
+			_fail("Gameplay HUD should display the unchanged gold balance.")
+			return
+		current_scene.queue_free()
+		await process_frame
+		_storage.call("load_data")
+		if int(_storage.get("gold")) != balance:
+			_fail("Free entry must preserve the saved gold balance.")
+			return
+		if balance == 0:
+			menu = menu_scene.instantiate() as Control
+			root.add_child(menu)
+			current_scene = menu
 
 	var world: Node2D = Node2D.new()
 	root.add_child(world)
@@ -95,7 +104,7 @@ func _run() -> void:
 	world.add_child(enemy)
 	manager.set("_battle_started", true)
 	manager.call("_process", 0.0)
-	if int(_storage.get("gold")) != 7:
+	if int(_storage.get("gold")) != 10:
 		_fail("An unfinished Arena should not grant gold.")
 		return
 	for outcome: String in ["win", "loss", "draw"]:
@@ -115,7 +124,7 @@ func _run() -> void:
 			_fail("Arena results should show the gold payout.")
 			return
 	_storage.call("load_data")
-	if int(_storage.get("gold")) != 14:
+	if int(_storage.get("gold")) != 17:
 		_fail("Arena payouts should persist after reloading the save.")
 		return
 	_finish(0)

@@ -74,7 +74,8 @@ func _ready() -> void:
 	if randomize_biome_on_spawn:
 		var biome_rng: RandomNumberGenerator = RandomNumberGenerator.new()
 		biome_rng.randomize()
-		biome = RANDOM_BIOMES[biome_rng.randi_range(0, RANDOM_BIOMES.size() - 1)] as Biome
+		var storage: Node = get_tree().root.get_node("PetStorage")
+		biome = int(storage.call("select_capture_biome", RANDOM_BIOMES, biome_rng)) as Biome
 		print("Spawned biome: ", Biome.keys()[biome])
 	_fit_layout_to_viewport(get_viewport_rect().size)
 	tile_set = _create_terrain_tile_set()
@@ -121,7 +122,8 @@ func _is_map_cleared() -> bool:
 
 
 func register_capture_candidate(monster: Monster) -> void:
-	if _stage_completed or not monster.arena_team.is_empty():
+	# Split offspring fight in the stage but are not separate capture rewards.
+	if _stage_completed or not monster.arena_team.is_empty() or monster.split_count > 0:
 		return
 	var instance_id: int = monster.get_instance_id()
 	if _registered_capture_ids.has(instance_id):

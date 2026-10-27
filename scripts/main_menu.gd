@@ -36,9 +36,20 @@ var _play_selection_active: bool = false
 var _play_team_indices: Array[int] = []
 var _play_mount_index: int = -1
 var _fusion_screen: Control
+var _inventory_debug: Control
+var _inventory_debug_button: Button
 
 
 func _ready() -> void:
+	_inventory_debug_button = Button.new()
+	_inventory_debug_button.name = "InventoryDebugButton"
+	_inventory_debug_button.text = "Debug: thêm Monster"
+	_inventory_debug_button.custom_minimum_size.y = 48.0
+	_inventory_debug_button.hide()
+	var inventory_column: VBoxContainer = inventory_panel.get_node("Margin/VBox") as VBoxContainer
+	inventory_column.add_child(_inventory_debug_button)
+	inventory_column.move_child(_inventory_debug_button, 1)
+	_inventory_debug_button.pressed.connect(_open_inventory_debug)
 	PetStorage.gold_changed.connect(_update_gold_display)
 	_update_gold_display(PetStorage.gold)
 	if _touch_enabled:
@@ -52,6 +63,7 @@ func _ready() -> void:
 	fusion_button.pressed.connect(_open_fusion)
 	quit_button.pressed.connect(_on_quit_pressed)
 	close_button.pressed.connect(_close_inventory)
+	inventory_panel.connect("ui_closed", _on_inventory_closed)
 	arena_start_button.pressed.connect(_start_arena)
 	play_start_button.pressed.connect(_start_game)
 	release_confirm.confirmed.connect(_on_release_confirmed)
@@ -61,8 +73,8 @@ func _ready() -> void:
 func _update_gold_display(balance: int) -> void:
 	gold_label.text = "Vàng: %d" % balance
 	panel_gold_label.text = "Vàng: %d" % balance
-	play_button.text = "Bắt thú · %d vàng" % PetStorage.CAPTURE_ENTRY_COST
-	play_start_button.text = "Vào game · %d vàng" % PetStorage.CAPTURE_ENTRY_COST
+	play_button.text = "Bắt thú · Miễn phí"
+	play_start_button.text = "Vào game · Miễn phí"
 	arena_button.text = "Arena 5v5 · Miễn phí"
 	arena_button.tooltip_text = "Miễn phí | Thắng +5 vàng | Thua +2 vàng"
 	if _play_selection_active:
@@ -70,12 +82,9 @@ func _update_gold_display(balance: int) -> void:
 
 
 func _update_play_entry_state() -> void:
-	var missing_gold: int = maxi(0, PetStorage.CAPTURE_ENTRY_COST - PetStorage.gold)
-	panel_gold_label.text = "Vàng: %d | Phí: %d vàng" % [PetStorage.gold, PetStorage.CAPTURE_ENTRY_COST]
-	if missing_gold > 0:
-		panel_gold_label.text += " | Thiếu %d vàng" % missing_gold
+	panel_gold_label.text = "Vàng: %d | Vào chơi miễn phí" % PetStorage.gold
 	var valid_team: bool = _play_team_indices.size() == PetStorage.TEAM_SIZE or PetStorage.collection.is_empty()
-	play_start_button.disabled = missing_gold > 0 or not valid_team
+	play_start_button.disabled = not valid_team
 
 
 func _configure_touch_layout() -> void:
@@ -141,7 +150,7 @@ func _layout_responsive_ui(viewport_size: Vector2 = Vector2.ZERO) -> void:
 
 
 func _notification(what: int) -> void:
-	if is_instance_valid(_fusion_screen):
+	if is_instance_valid(_fusion_screen) or is_instance_valid(_inventory_debug):
 		return
 	if what == NOTIFICATION_WM_GO_BACK_REQUEST and is_instance_valid(inventory_panel):
 		if inventory_panel.visible:
@@ -151,6 +160,8 @@ func _notification(what: int) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if is_instance_valid(_inventory_debug):
+		return
 	if inventory_panel.visible and event.is_action_pressed("ui_cancel"):
 		_close_inventory()
 
@@ -189,10 +200,10 @@ func _on_arena_pressed() -> void:
 
 
 func _show_team_selection(is_arena: bool) -> void:
+	_inventory_debug_button.hide()
 	fusion_button.hide()
 	menu_center.visible = false
 	gold_label.visible = false
-	inventory_panel.visible = true
 	team_row.visible = true
 	loadout_row.visible = true
 	team_label.visible = true
@@ -208,6 +219,7 @@ func _show_team_selection(is_arena: bool) -> void:
 	mount_label.text = "Thú cưỡi (không chiến đấu)"
 	inventory_panel.get_node("Margin/VBox/CollectionLabel").text = "Chọn tối đa 5 Pet từ bộ sưu tập" if is_arena else "Chọn Pet chiến đấu hoặc bấm Chọn cưỡi"
 	_inventory_selection_changed()
+	inventory_panel.call("OpenUI")
 
 
 func _on_debug_pressed() -> void:
@@ -219,13 +231,13 @@ func _on_quit_pressed() -> void:
 
 
 func _open_inventory() -> void:
+	_inventory_debug_button.show()
 	fusion_button.show()
 	_arena_selection_active = false
 	_play_selection_active = false
 	panel_gold_label.text = "Vàng: %d" % PetStorage.gold
 	menu_center.visible = false
 	gold_label.visible = false
-	inventory_panel.visible = true
 	team_row.visible = false
 	mount_row.visible = false
 	loadout_row.visible = false
@@ -238,15 +250,16 @@ func _open_inventory() -> void:
 	inventory_panel.get_node("Margin/VBox/CollectionLabel").text = "Bộ sưu tập" if _touch_enabled else "Thú đã bắt"
 	info_label.text = ""
 	_refresh_inventory()
+	inventory_panel.call("OpenUI")
 	close_button.grab_focus()
 
 
 func _open_fusion() -> void:
-	if not inventory_panel.visible or _play_selection_active or _arena_selection_active or is_instance_valid(_fusion_screen):
+	if not inventory_panel.visible or _play_selection_active or _arena_selection_active or is_instance_valid(_fusion_screen) or is_instance_valid(_inventory_debug):
 		return
 	_fusion_screen = (load("res://scenes/pet_fusion.tscn") as PackedScene).instantiate() as Control
 	_fusion_screen.connect("closed", _on_fusion_closed)
-	inventory_panel.hide()
+	inventory_panel.call("HideImmediately")
 	add_child(_fusion_screen)
 
 
@@ -257,7 +270,32 @@ func _on_fusion_closed() -> void:
 	fusion_button.grab_focus()
 
 
+func _open_inventory_debug() -> void:
+	if not inventory_panel.visible or _play_selection_active or _arena_selection_active or is_instance_valid(_inventory_debug) or is_instance_valid(_fusion_screen):
+		return
+	_inventory_debug = preload("res://scripts/inventory_debug.gd").new()
+	_inventory_debug.connect("closed", _close_inventory_debug)
+	_inventory_debug.connect("monster_added", func(_data: Dictionary) -> void: _refresh_inventory())
+	inventory_panel.call("HideImmediately")
+	add_child(_inventory_debug)
+
+
+func _close_inventory_debug() -> void:
+	if not is_instance_valid(_inventory_debug):
+		return
+	var debug_screen: Control = _inventory_debug
+	_inventory_debug = null
+	debug_screen.hide()
+	debug_screen.queue_free()
+	_open_inventory()
+	_inventory_debug_button.grab_focus()
+
+
 func _close_inventory() -> void:
+	inventory_panel.call("CloseUI")
+
+
+func _on_inventory_closed() -> void:
 	fusion_button.hide()
 	var was_arena_selection: bool = _arena_selection_active
 	var was_play_selection: bool = _play_selection_active
@@ -500,9 +538,6 @@ func _inventory_selection_changed() -> void:
 func _start_game() -> void:
 	if not _play_selection_active or (_play_team_indices.size() != PetStorage.TEAM_SIZE and not PetStorage.collection.is_empty()):
 		return
-	if not PetStorage.spend_gold(PetStorage.CAPTURE_ENTRY_COST):
-		_update_play_entry_state()
-		return
 	PetStorage.team.assign(_play_team_indices)
 	var mount_index: int = _play_mount_index if _play_mount_index >= 0 and _play_mount_index < PetStorage.collection.size() and not PetStorage.team.has(_play_mount_index) else -1
 	if not PetStorage.set_mount_pet(mount_index):
@@ -511,8 +546,7 @@ func _start_game() -> void:
 	var scene_error: Error = get_tree().change_scene_to_file(GAME_SCENE)
 	if scene_error != OK:
 		_play_selection_active = true
-		PetStorage.add_gold(PetStorage.CAPTURE_ENTRY_COST)
-		info_label.text = "Không thể mở màn chơi. Đã hoàn lại phí vào chơi."
+		info_label.text = "Không thể mở màn chơi: %s." % error_string(scene_error)
 
 
 func _start_arena() -> void:

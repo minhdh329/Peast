@@ -46,7 +46,10 @@ func step(delta: float, apply_gravity: bool = true) -> bool:
 	if not active:
 		return false
 	var start_position: Vector2 = _actor.global_position
-	_actor.velocity.x = _direction * minf(float(_actor.get("charge_speed")), _distance_remaining / maxf(delta, 0.001))
+	var traits: Array[String] = []
+	traits.assign(_actor.get("current_traits"))
+	var speed: float = float(_actor.get("charge_speed")) * preload("res://scripts/combat_traits.gd").movement_multiplier(traits)
+	_actor.velocity.x = _direction * minf(speed, _distance_remaining / maxf(delta, 0.001))
 	if not _actor.is_on_floor() and apply_gravity:
 		_actor.velocity.y += float(ProjectSettings.get_setting("physics/2d/default_gravity")) * delta
 	elif _actor.is_on_floor():
@@ -100,53 +103,31 @@ func _try_start_ready_charge(target: Node2D) -> void:
 
 
 func _find_opponent() -> Node2D:
-	var actor_team: String = str(_actor.get("arena_team"))
-	var groups: Array[String] = ["player", "pets"]
-	if _actor.is_in_group("pets"):
-		groups = ["monsters"]
-	if not actor_team.is_empty():
-		groups = ["TeamEnemy" if actor_team == "TeamPlayer" else "TeamPlayer"]
 	var closest_target: Node2D
 	var closest_distance_squared: float = INF
-	for group_name: String in groups:
-		for candidate: Node in get_tree().get_nodes_in_group(group_name):
-			var target: Node2D = candidate as Node2D
-			if target == null or target == _actor or target.is_queued_for_deletion() or not target.has_method("take_damage"):
-				continue
-			if target.has_method("is_alive") and not target.call("is_alive"):
-				continue
-			var distance_squared: float = _actor.global_position.distance_squared_to(target.global_position)
-			if distance_squared < closest_distance_squared:
-				closest_distance_squared = distance_squared
-				closest_target = target
+	for target: Node2D in _actor.call("get_combat_targets"):
+		var distance_squared: float = _actor.global_position.distance_squared_to(target.global_position)
+		if distance_squared < closest_distance_squared:
+			closest_distance_squared = distance_squared
+			closest_target = target
 	return closest_target
 
 
 func _check_hits(start_position: Vector2, end_position: Vector2) -> void:
-	var team: String = str(_actor.get("arena_team"))
-	var groups: Array[String] = ["player", "pets"]
-	if _actor.is_in_group("pets"):
-		groups = ["monsters"]
-	if not team.is_empty():
-		groups = ["TeamEnemy" if team == "TeamPlayer" else "TeamPlayer"]
-	for group_name: String in groups:
-		for candidate: Node in get_tree().get_nodes_in_group(group_name):
-			var target: Node2D = candidate as Node2D
-			if target == null or target == _actor or target.is_queued_for_deletion() or not target.has_method("take_damage"):
-				continue
-			if _hit_ids.has(target.get_instance_id()) or (target.has_method("is_alive") and not target.call("is_alive")):
-				continue
-			var closest_point: Vector2 = Geometry2D.get_closest_point_to_segment(target.global_position, start_position, end_position)
-			if closest_point.distance_to(target.global_position) > 36.0:
-				continue
-			_hit_ids[target.get_instance_id()] = true
-			var effect: String = "Stun" if str(_actor.get("charge_style")) == "Cat" else "None"
-			var damage: int = int(_actor.get("attack_damage"))
-			target.call("take_damage", damage, start_position, effect, 1.0)
-			_actor.call("_try_lifesteal", damage)
-			if effect == "Stun":
-				finish()
-				return
+	for target: Node2D in _actor.call("get_combat_targets"):
+		if _hit_ids.has(target.get_instance_id()):
+			continue
+		var closest_point: Vector2 = Geometry2D.get_closest_point_to_segment(target.global_position, start_position, end_position)
+		if closest_point.distance_to(target.global_position) > 36.0:
+			continue
+		_hit_ids[target.get_instance_id()] = true
+		var effect: String = "Stun" if str(_actor.get("charge_style")) == "Cat" else "None"
+		var damage: int = int(_actor.get("attack_damage"))
+		target.call("take_damage", damage, start_position, effect, 1.0)
+		_actor.call("_try_lifesteal", damage)
+		if effect == "Stun":
+			finish()
+			return
 
 
 func finish() -> void:

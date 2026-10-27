@@ -10,6 +10,7 @@ var _right_wall: CollisionShape2D
 
 
 func _ready() -> void:
+	add_to_group("map_boundaries")
 	collision_layer = 1
 	collision_mask = 0
 	var left_wall: CollisionShape2D = CollisionShape2D.new()

@@ -28,6 +28,7 @@ var city_charge: Node
 @export var dash_speed: float = 900.0
 @export var dash_duration: float = 0.25
 var attack_count: int = 0
+var _attack_sequence_active: bool = false
 var is_dashing: bool = false
 # Khoảng cách Pet đứng để đánh trực tiếp khi thuộc hệ Melee.
 # Melee đánh trúng khi khoảng hở giữa thân Pet và thân Monster không quá giá trị này (giống Monster).
@@ -86,6 +87,8 @@ const MAX_DETOUR_ATTEMPTS: int = 6
 @onready var status_effects: Node = $StatusEffects
 @onready var dash_hitbox: Area2D = $DashHitbox
 @onready var passive_vfx: Node2D = $PassiveVFX
+@onready var _base_follow_speed: float = follow_speed
+@onready var _base_melee_move_speed: float = melee_move_speed
 
 
 # Player truyền chính nó vào hàm này khi Pet được triệu hồi.
@@ -145,9 +148,11 @@ func apply_pet_data(pet_data: Dictionary) -> void:
 	_lifesteal_heal_fraction = float(pet_data.get("lifesteal_heal_fraction", _lifesteal_heal_fraction))
 	_death_explosion_radius = float(pet_data.get("death_explosion_radius", _death_explosion_radius))
 	_death_explosion_damage = int(pet_data.get("death_explosion_damage", _death_explosion_damage))
-	if current_traits.has(Monster.TRAIT_FAST_MOVEMENT):
-		follow_speed *= 1.5
-		melee_move_speed *= 1.5
+	var multiplier: float = Monster.COMBAT_TRAITS.movement_multiplier(current_traits)
+	follow_speed = _base_follow_speed * multiplier
+	melee_move_speed = _base_melee_move_speed * multiplier
+	if not pet_data.has("current_hp"):
+		current_hp = Monster.COMBAT_TRAITS.starting_hp(max_hp, current_traits)
 	melee_contact_reach = pet_data.get("melee_contact_reach", melee_contact_reach)
 	attack_timer.wait_time = pet_data.get("attack_interval", attack_timer.wait_time)
 	attack_timer.start()
@@ -404,7 +409,7 @@ func _split_into_slimes() -> void:
 		get_parent().add_child(offspring)
 		var offspring_data: Dictionary = _pet_data.duplicate(true)
 		offspring_data["max_hp"] = maxi(roundi(max_hp * 0.5), 1)
-		offspring_data["current_hp"] = offspring_data["max_hp"]
+		offspring_data["current_hp"] = Monster.COMBAT_TRAITS.starting_hp(int(offspring_data["max_hp"]), current_traits)
 		offspring_data["attack_damage"] = maxi(roundi(attack_damage * 0.5), 1)
 		offspring_data["sprite_scale"] = sprite.scale * 0.5
 		offspring_data["current_traits"] = current_traits.duplicate()
@@ -445,13 +450,7 @@ func _try_lifesteal(damage: int) -> void:
 
 func _explode_on_death() -> void:
 	passive_vfx.call("play_explosion", _death_explosion_radius)
-	var target_group: String = "monsters" if arena_team.is_empty() else _opposing_team_tag()
-	for node: Node in get_tree().get_nodes_in_group(target_group):
-		var target: Node2D = node as Node2D
-		if target == null or target.is_queued_for_deletion() or not target.has_method("take_damage"):
-			continue
-		if target.has_method("is_alive") and not target.call("is_alive"):
-			continue
+	for target: Node2D in get_combat_targets():
 		if global_position.distance_to(target.global_position) <= _death_explosion_radius:
 			target.call("take_damage", _death_explosion_damage, global_position)
 
@@ -480,15 +479,7 @@ func _refresh_nearest_target() -> void:
 	var nearest_monster: Node2D
 	var nearest_distance_squared: float = INF
 
-	var target_group: String = "monsters" if arena_team.is_empty() else _opposing_team_tag()
-	for node: Node in get_tree().get_nodes_in_group(target_group):
-		var candidate: Node2D = node as Node2D
-		if candidate == null or candidate.is_queued_for_deletion() or not candidate.has_method("take_damage"):
-			continue
-		if candidate.has_method("is_alive") and not candidate.call("is_alive"):
-			continue
-		if not arena_team.is_empty() and not candidate.is_in_group(_opposing_team_tag()):
-			continue
+	for candidate: Node2D in get_combat_targets():
 		var distance_squared: float = global_position.distance_squared_to(candidate.global_position)
 		if distance_squared < nearest_distance_squared:
 			nearest_distance_squared = distance_squared
@@ -512,7 +503,7 @@ func body_radius() -> float:
 
 # Timer gọi hàm này theo attack_interval; chỉ đánh khi mục tiêu đã vào tầm.
 func _on_attack_timer_timeout() -> void:
-	if not _arena_active or _is_reviving or is_dashing or (city_charge != null and bool(city_charge.get("active"))):
+	if _attack_sequence_active or not is_alive() or is_queued_for_deletion() or not _arena_active or is_dashing or (city_charge != null and bool(city_charge.get("active"))):
 		return
 	_refresh_nearest_target()
 	if not is_instance_valid(_target_monster):
@@ -523,57 +514,63 @@ func _on_attack_timer_timeout() -> void:
 	var distance_squared: float = global_position.distance_squared_to(_target_monster.global_position)
 	if _attack_style == "Melee":
 		# Tính từ mép thân tới mép thân nên chạm bất kỳ điểm nào trên Monster cũng đánh được.
-		if Monster.distance_to_body_surface(_target_monster, global_position) - _body_radius() <= melee_contact_reach:
-			var attack_count: int = 2 if current_traits.has(Monster.TRAIT_DOUBLE_ATTACK) else 1
-			for attack_index: int in range(attack_count):
-				if not is_instance_valid(_target_monster) or _target_monster.is_queued_for_deletion() or not _target_monster.call("is_alive"):
-					break
-				_target_monster.call("take_damage", attack_damage, global_position, attack_effect, attack_effect_chance)
-				_try_lifesteal(attack_damage)
-				if charge_style != "None":
-					city_charge.call("record_attack", _target_monster)
-				if chain_lightning:
-					_chain_lightning(_target_monster)
-				if city_charge.get("active"):
-					break
+		if Monster.distance_to_body_surface(_target_monster, global_position) - _body_radius() > melee_contact_reach:
+			return
+	elif distance_squared > ranged_attack_range * ranged_attack_range:
 		return
-
-	if distance_squared > ranged_attack_range * ranged_attack_range:
-		return
-	if wind_dash_enabled and attack_count == 2:
-		_start_wind_dash(_target_monster)
-		return
-	if fireball_scene == null:
+	if _attack_style != "Melee" and fireball_scene == null:
 		push_warning("Hãy gán res://scenes/fireball.tscn vào Fireball Scene trong Inspector của Pet.")
 		return
 
 	var game_scene: Node = get_tree().current_scene
 	if game_scene == null:
 		return
-	var shots_per_cycle: int = 2 if current_traits.has(Monster.TRAIT_DOUBLE_ATTACK) else 1
-	for shot_index: int in range(shots_per_cycle):
-		if wind_dash_enabled and attack_count == 2:
-			_start_wind_dash(_target_monster)
+	var target: Node2D = _target_monster
+	_attack_sequence_active = true
+	var hits_per_cycle: int = 2 if current_traits.has(Monster.TRAIT_DOUBLE_ATTACK) else 1
+	for attack_index: int in range(hits_per_cycle):
+		if attack_index > 0:
+			await get_tree().create_timer(Monster.DOUBLE_ATTACK_DELAY, false, true).timeout
+		if not is_alive() or is_queued_for_deletion() or not _arena_active or status_effects.call("is_stunned") or is_dashing or city_charge.get("active"):
 			break
-		var fireball: FireballProjectile = fireball_scene.instantiate()
-		game_scene.add_child(fireball)
-		fireball.global_position = global_position
-		fireball.damage = attack_damage
-		fireball.effect_type = attack_effect
-		fireball.effect_chance = attack_effect_chance
-		fireball.arena_team = arena_team
-		fireball.set_source_player(_target_player)
-		if current_traits.has(Monster.TRAIT_LIFESTEAL):
-			fireball.set_lifesteal_source(self, _lifesteal_chance, _lifesteal_heal_fraction)
-		fireball.launch_to(_target_monster.global_position)
+		if not is_instance_valid(target) or target.is_queued_for_deletion() or not target.call("is_alive"):
+			break
+		if attack_index > 0 and not _is_enemy_target(target):
+			break
+		if wind_dash_enabled and attack_count == 2:
+			_start_wind_dash()
+			break
+		if _attack_style == "Melee":
+			target.call("take_damage", attack_damage, global_position, attack_effect, attack_effect_chance)
+			_try_lifesteal(attack_damage)
+			if chain_lightning:
+				_chain_lightning(target)
+		else:
+			var fireball: FireballProjectile = fireball_scene.instantiate()
+			fireball.damage = attack_damage
+			fireball.effect_type = attack_effect
+			fireball.effect_chance = attack_effect_chance
+			fireball.arena_team = arena_team
+			fireball.friendly_fire = Monster.COMBAT_TRAITS.is_berserk(self)
+			fireball.damage_source = self
+			fireball.set_source_player(_target_player)
+			if current_traits.has(Monster.TRAIT_LIFESTEAL):
+				fireball.set_lifesteal_source(self, _lifesteal_chance, _lifesteal_heal_fraction)
+			game_scene.add_child(fireball)
+			fireball.global_position = global_position
+			fireball.launch_to(target.global_position)
+			if wind_dash_enabled:
+				attack_count += 1
 		if charge_style != "None":
-			city_charge.call("record_attack", _target_monster)
-		if wind_dash_enabled:
-			attack_count += 1
+			city_charge.call("record_attack", target)
+			if city_charge.get("active"):
+				break
+	_attack_sequence_active = false
 
 
-func _start_wind_dash(target: Node2D) -> void:
-	if not is_instance_valid(target) or target.is_queued_for_deletion():
+func _start_wind_dash() -> void:
+	var target: Node2D = Monster.COMBAT_TRAITS.farthest_target(self)
+	if target == null:
 		return
 	_dash_direction = (target.global_position - global_position).normalized()
 	if _dash_direction.is_zero_approx():
@@ -586,7 +583,7 @@ func _start_wind_dash(target: Node2D) -> void:
 
 func _process_wind_dash(delta: float) -> void:
 	_dash_time_remaining -= delta
-	velocity = _dash_direction * dash_speed
+	velocity = _dash_direction * dash_speed * Monster.COMBAT_TRAITS.movement_multiplier(current_traits)
 	var start_position: Vector2 = global_position
 	move_and_slide()
 	for body: Node2D in dash_hitbox.get_overlapping_bodies():
@@ -594,11 +591,8 @@ func _process_wind_dash(delta: float) -> void:
 			_apply_wind_dash_hit(body)
 			if not is_dashing:
 				break
-	if is_dashing and not arena_team.is_empty():
-		for node: Node in get_tree().get_nodes_in_group(_opposing_team_tag()):
-			var target: Node2D = node as Node2D
-			if target == null:
-				continue
+	if is_dashing:
+		for target: Node2D in get_combat_targets():
 			var closest: Vector2 = Geometry2D.get_closest_point_to_segment(target.global_position, start_position, global_position)
 			if closest.distance_to(target.global_position) <= 38.0:
 				_apply_wind_dash_hit(target)
@@ -631,17 +625,17 @@ func _finish_wind_dash() -> void:
 
 
 func _is_enemy_target(target: Node) -> bool:
-	return target.is_in_group("monsters") if arena_team.is_empty() else target.is_in_group(_opposing_team_tag())
+	return Monster.COMBAT_TRAITS.can_target(self, target)
+
+
+func get_combat_targets() -> Array[Node2D]:
+	return Monster.COMBAT_TRAITS.targets(self)
 
 
 func _chain_lightning(primary_target: Node2D) -> void:
 	var chain_damage: int = maxi(roundi(attack_damage * chain_lightning_damage_fraction), 1)
-	var target_group: String = "monsters" if arena_team.is_empty() else _opposing_team_tag()
-	for node: Node in get_tree().get_nodes_in_group(target_group):
-		var target: Node2D = node as Node2D
-		if target == null or target == primary_target or target.is_queued_for_deletion() or not target.has_method("take_damage"):
-			continue
-		if target.has_method("is_alive") and not target.call("is_alive"):
+	for target: Node2D in get_combat_targets():
+		if target == primary_target:
 			continue
 		if primary_target.global_position.distance_squared_to(target.global_position) > chain_lightning_radius * chain_lightning_radius:
 			continue
