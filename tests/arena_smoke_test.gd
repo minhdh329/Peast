@@ -12,6 +12,14 @@ func _run() -> void:
 	var storage: Node = root.get_node("PetStorage")
 	_original_save_path = str(storage.get("save_path"))
 	storage.set("save_path", PET_SAVE_PATH)
+	var arena_map: Node2D = (load("res://scenes/ArenaTest.tscn") as PackedScene).instantiate() as Node2D
+	var background: TextureRect = arena_map.get_node("BackgroundLayer/Background") as TextureRect
+	var map_name: Label = arena_map.get_node("MapUI/MapName") as Label
+	var valid_map: bool = map_name.text == "Đấu trường" and background.texture.resource_path == "res://assets/Gemini_Generated_Image_hkpyxthkpyxthkpy.png" and background.stretch_mode == TextureRect.STRETCH_KEEP_ASPECT_COVERED and background.expand_mode == TextureRect.EXPAND_IGNORE_SIZE and background.anchor_right == 1.0 and background.anchor_bottom == 1.0 and not (arena_map.get_node("FloorVisual") as Polygon2D).visible and not (arena_map.get_node("CenterLine") as Polygon2D).visible
+	arena_map.free()
+	if not valid_map:
+		_fail("Arena should display the Dau truong map name and a full-viewport image background without old overlays.")
+		return
 	if not await _test_saved_arena_roster():
 		return
 	if not await _test_play_formation_flow():

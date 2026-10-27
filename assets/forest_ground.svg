@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" shape-rendering="crispEdges">
+  <defs>
+    <g id="soil">
+      <path fill="#30241e" d="M0 0h64v32H0z"/>
+      <path fill="#463126" d="m0 1 11 2 6-3 9 4 9-3 12 3 8-4 9 2v12l-9-2-8 7-14-4-10 5-13-6L0 18z"/>
+      <path fill="#57402d" d="m2 3 5-1 3 4-5 3zm16 3 4-2 5 4-4 3zm22-3 6 2-2 4-5-1zm14 3 5-2 3 4-5 3zM0 20l5-3 4 4-3 4zm24 3 5-3 5 4-6 4zm21-5 5-2 4 4-5 3z"/>
+      <path fill="#211e1a" d="m4 13 7-5 8 3 2 10-7 6-10-4zm33 8 7-6 10 5-2 9-9 3zm18-6 5-4 4 3v7l-6 1z"/>
+      <path fill="#55544a" d="m5 14 7-4 5 2 1 8-6 5-6-3zm34 8 6-5 6 4-1 6-7 3z"/>
+      <path fill="#747064" d="m6 14 6-3 3 1-3 5-6 2zm34 8 5-4 4 3-7 4z"/>
+      <path fill="#3c3b34" d="m12 18 5-5 1 7-6 5-6-3zm32 8 6-4v5l-7 3-3-3z"/>
+      <path fill="none" stroke="#1b1b16" stroke-width="3" d="m26 0-2 7 4 6-4 8 2 7-4 4m9-32 1 8 5 6-3 7 3 7"/>
+      <path fill="none" stroke="#7b5736" d="m26 0-2 7 4 6-4 8 2 7-4 4m9-32 1 8 5 6-3 7 3 7m-9-15 4 3-1 7m3-4 6 2 1 5"/>
+      <path fill="#8a7753" d="M1 11h2v2H1zm19 14h2v2h-2zm21-13h2v2h-2zm17 14h3v2h-3z"/>
+    </g>
+  </defs>
+  <use href="#soil"/>
+  <path fill="#152c19" d="M0 0h64v7l-4 2-4-2-3 4-4-3-3 2-4-3-5 3-4-2-3 2-4-3-3 3-4-2-4 3-4-4-4 2-4-2-3 2z"/>
+  <path fill="#376329" d="M0 0h64v4l-4 2-4-2-4 4-4-3-4 2-5-2-5 2-4-2-4 3-5-3-5 3-4-4-5 3-4-2-3 2z"/>
+  <path fill="#5c8c31" d="m0 0 6 1 4-1 4 2 5-2 6 1 6-1 7 2 5-2 8 1 6-1 7 1v2l-7 1-6-1-8 2-5-2-6 2-7-2-5 2-6-1-5 1-4-2-4 1z"/>
+  <path fill="#8aa543" d="M1 0h4v1H1zm12 1h4v1h-4zm12-1h5v1h-5zm17 1h5v1h-5zm13-1h5v1h-5z"/>
+  <path fill="#477a2c" d="m3 0-1 4h2l2-4zm14 0-2 4h3l2-4zm18 0-2 5h2l2-5zm17 0-2 4h3l2-4z"/>
+  <use href="#soil" y="32"/>
+  <path fill="#251d1a" opacity=".35" d="M0 50h64v14H0z"/>
+</svg>

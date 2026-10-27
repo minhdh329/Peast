@@ -18,17 +18,22 @@ const SOLID_TERRAIN_COLORS: Dictionary = {
 	Biome.CITY: Color("#66747b"),
 }
 const GRASS_TEXTURE: Texture2D = preload("res://assets/terrain_tile.svg")
+const FOREST_GROUND: Texture2D = preload("res://assets/forest_ground.svg")
 const OCEAN_TEXTURE: Texture2D = preload("res://assets/terrain_ocean.svg")
+const OCEAN_GROUND: Texture2D = preload("res://assets/ocean_ground.svg")
 const VOLCANO_TEXTURE: Texture2D = preload("res://assets/terrain_volcano.svg")
+const VOLCANO_GROUND: Texture2D = preload("res://assets/volcano_ground.svg")
 const SKY_TEXTURE: Texture2D = preload("res://assets/terrain_sky.svg")
 const CITY_TEXTURE: Texture2D = preload("res://assets/terrain_city.svg")
+const CITY_GROUND: Texture2D = preload("res://assets/city_ground.svg")
+const CITY_CONTAINERS: Texture2D = preload("res://assets/city_containers.svg")
 const CITY_SKYLINE: Texture2D = preload("res://assets/city_skyline.svg")
-const CITY_BACKGROUND: Texture2D = preload("res://assets/c86a3be5-cbc3-4d74-8f0b-f4070d9e3eef.jpg")
-const FOREST_BACKGROUND: Texture2D = preload("res://assets/Gemini_Generated_Image_qwu7kjqwu7kjqwu7.png")
-const VOLCANO_BACKGROUND: Texture2D = preload("res://assets/ABF30583-BCA8-4478-AD4C-F9A178D7BC59.jpeg")
-const OCEAN_BACKGROUND: Texture2D = preload("res://assets/25DDF2A9-E0A9-4B77-8CA1-E589A6FF390B.jpeg")
-const OCEAN_BACKGROUND_HORIZON_Y: float = 334.0
-const SKY_BACKGROUND: Texture2D = preload("res://assets/(n) 2.png")
+const CITY_BACKGROUND: Texture2D = preload("res://assets/8cef7e8f-0044-401f-b9d8-3c54311be11e.jpg")
+const FOREST_BACKGROUND: Texture2D = preload("res://assets/Gemini_Generated_Image_xqbn43xqbn43xqbn.png")
+const VOLCANO_BACKGROUND: Texture2D = preload("res://assets/Gemini_Generated_Image_kb05aykb05aykb05.png")
+const OCEAN_BACKGROUND: Texture2D = preload("res://assets/Gemini_Generated_Image_hvjgphhvjgphhvjg.png")
+const OCEAN_BACKGROUND_HORIZON_Y: float = 764.0
+const SKY_BACKGROUND: Texture2D = preload("res://assets/Gemini_Generated_Image_yivuqtyivuqtyivu.png")
 const EXIT_PORTAL_SCRIPT: GDScript = preload("res://scripts/exit_portal.gd")
 
 # Mỗi biome chỉ spawn đúng nhóm Monster của nó.
@@ -158,15 +163,30 @@ func _create_terrain_tile_set() -> TileSet:
 
 	var atlas_source: TileSetAtlasSource = TileSetAtlasSource.new()
 	var source_image: Image = _get_biome_texture().get_image()
-	var atlas_image: Image = Image.create(source_image.get_width(), TILE_SIZE.y * 2, false, Image.FORMAT_RGBA8)
-	var atlas_tile_count: int = 2 if biome == Biome.VOLCANO else 1
+	var has_ground_art: bool = biome in [Biome.VOLCANO, Biome.FOREST, Biome.OCEAN, Biome.CITY]
+	var atlas_tile_count: int = 4 if biome == Biome.CITY else (2 if has_ground_art else 1)
+	var atlas_image: Image = Image.create(TILE_SIZE.x * atlas_tile_count, TILE_SIZE.y * (3 if has_ground_art else 2), false, Image.FORMAT_RGBA8)
 	for atlas_x: int in range(atlas_tile_count):
 		var solid_color: Color = Color("#ef713b") if biome == Biome.VOLCANO and atlas_x == 1 else SOLID_TERRAIN_COLORS[biome]
 		atlas_image.fill_rect(Rect2i(atlas_x * TILE_SIZE.x, 0, TILE_SIZE.x, TILE_SIZE.y), solid_color)
-		if biome == Biome.VOLCANO and atlas_x == 1:
-			atlas_image.blend_rect(source_image, Rect2i(TILE_SIZE.x, 0, TILE_SIZE.x, TILE_SIZE.y), Vector2i(TILE_SIZE.x, 0))
+		if biome == Biome.SKY_ISLANDS or biome == Biome.VOLCANO and atlas_x == 1:
+			atlas_image.blend_rect(source_image, Rect2i(atlas_x * TILE_SIZE.x, 0, TILE_SIZE.x, TILE_SIZE.y), Vector2i(atlas_x * TILE_SIZE.x, 0))
 		atlas_image.fill_rect(Rect2i(atlas_x * TILE_SIZE.x, TILE_SIZE.y, TILE_SIZE.x, PLATFORM_THICKNESS), solid_color)
-		atlas_image.blend_rect(source_image, Rect2i(atlas_x * TILE_SIZE.x, 0, TILE_SIZE.x, PLATFORM_THICKNESS), Vector2i(atlas_x * TILE_SIZE.x, TILE_SIZE.y))
+		var platform_visual_height: int = TILE_SIZE.y / 2 if biome == Biome.SKY_ISLANDS else PLATFORM_THICKNESS
+		atlas_image.blend_rect(source_image, Rect2i((atlas_x * TILE_SIZE.x) % source_image.get_width(), 0, TILE_SIZE.x, platform_visual_height), Vector2i(atlas_x * TILE_SIZE.x, TILE_SIZE.y))
+	if has_ground_art:
+		var ground_texture: Texture2D = VOLCANO_GROUND
+		if biome == Biome.FOREST:
+			ground_texture = FOREST_GROUND
+		elif biome == Biome.OCEAN:
+			ground_texture = OCEAN_GROUND
+		elif biome == Biome.CITY:
+			ground_texture = CITY_GROUND
+		var ground_image: Image = ground_texture.get_image()
+		# City columns 0 and 1 retain the existing building and platform artwork.
+		var ground_offset: int = TILE_SIZE.x * 2 if biome == Biome.CITY else 0
+		atlas_image.blit_rect(ground_image, Rect2i(0, 0, TILE_SIZE.x * 2, TILE_SIZE.y), Vector2i(ground_offset, 0))
+		atlas_image.blit_rect(ground_image, Rect2i(0, TILE_SIZE.y, TILE_SIZE.x * 2, TILE_SIZE.y), Vector2i(ground_offset, TILE_SIZE.y * 2))
 	atlas_source.texture = ImageTexture.create_from_image(atlas_image)
 	atlas_source.texture_region_size = TILE_SIZE
 	for atlas_x: int in range(atlas_tile_count):
@@ -188,6 +208,12 @@ func _create_terrain_tile_set() -> TileSet:
 			Vector2(16, 16),
 			Vector2(-16, 16)
 		]))
+		if has_ground_art:
+			var underground_coords: Vector2i = Vector2i(atlas_x, 2)
+			atlas_source.create_tile(underground_coords)
+			var underground_data: TileData = atlas_source.get_tile_data(underground_coords, 0)
+			underground_data.set_collision_polygons_count(0, 1)
+			underground_data.set_collision_polygon_points(0, 0, tile_data.get_collision_polygon_points(0, 0))
 		var platform_coords: Vector2i = Vector2i(atlas_x, 1)
 		atlas_source.create_tile(platform_coords)
 		atlas_source.create_alternative_tile(platform_coords, PLATFORM_ALTERNATIVE)
@@ -285,10 +311,18 @@ func _generate_ocean(random_generator: RandomNumberGenerator) -> void:
 	ocean_background.z_index = -12
 	var viewport_size: Vector2 = get_viewport_rect().size
 	var background_scale: float = maxf(float(map_width_cells * TILE_SIZE.x) / OCEAN_BACKGROUND.get_width(), viewport_size.y / OCEAN_BACKGROUND.get_height())
+	background_scale = maxf(background_scale, water_surface_y / OCEAN_BACKGROUND_HORIZON_Y)
+	background_scale = maxf(background_scale, (viewport_size.y - water_surface_y) / (OCEAN_BACKGROUND.get_height() - OCEAN_BACKGROUND_HORIZON_Y))
 	ocean_background.scale = Vector2.ONE * background_scale
 	ocean_background.position = Vector2(0.0, water_surface_y - OCEAN_BACKGROUND_HORIZON_Y * background_scale)
 	add_child(ocean_background)
 	_generate_floor_and_walls(0)
+	var world_width: float = float(map_width_cells * TILE_SIZE.x)
+	_add_polygon("OceanWater", PackedVector2Array([
+		Vector2(0.0, water_surface_y), Vector2(world_width, water_surface_y),
+		Vector2(world_width, floor_row * TILE_SIZE.y), Vector2(0.0, floor_row * TILE_SIZE.y)
+	]), Color(0.05, 0.55, 0.85, 0.3), 1)
+	_add_water_surface_line()
 	for start_x: int in range(2, map_width_cells - 2, 8):
 		_add_platform(start_x, surface_row, 4, 0)
 	var monster_columns: Array[int] = [6, int(map_width_cells / 2) - 2, map_width_cells - 10]
@@ -320,7 +354,7 @@ func _generate_volcano(random_generator: RandomNumberGenerator) -> void:
 		var lava_tile: bool = _is_lava_column(x, lava_segments)
 		var atlas_x: int = 1 if lava_tile else 0
 		for y: int in range(floor_row, floor_row + 4):
-			set_cell(Vector2i(x, y), 0, Vector2i(atlas_x if y == floor_row else 0, 0))
+			set_cell(Vector2i(x, y), 0, Vector2i(atlas_x, 0 if y == floor_row else 2))
 		if lava_tile:
 			_lava_areas.append(Rect2(Vector2(x * TILE_SIZE.x, floor_row * TILE_SIZE.y - 26), Vector2(TILE_SIZE.x, TILE_SIZE.y + 24)))
 
@@ -371,7 +405,12 @@ func _generate_sky_islands() -> void:
 func _generate_floor_and_walls(atlas_x: int) -> void:
 	for x: int in range(map_width_cells):
 		for y: int in range(floor_row, floor_row + 4):
-			set_cell(Vector2i(x, y), 0, Vector2i(atlas_x if y == floor_row else 0, 0))
+			var coords: Vector2i = Vector2i(atlas_x if y == floor_row else 0, 0)
+			if biome == Biome.FOREST or biome == Biome.OCEAN:
+				coords = Vector2i(x % 2, 0 if y == floor_row else 2)
+			elif biome == Biome.CITY:
+				coords = Vector2i(2 + x % 2, 0 if y == floor_row else 2)
+			set_cell(Vector2i(x, y), 0, coords)
 	_generate_side_walls(0)
 
 
@@ -398,6 +437,16 @@ func _generate_city() -> void:
 			_add_platform(start_x + 4, step_row, 2, 0)
 		for row: int in range(roof_row, floor_row - 2):
 			_add_platform(start_x, row, 4, 0, false)
+			var container_texture: AtlasTexture = AtlasTexture.new()
+			container_texture.atlas = CITY_CONTAINERS
+			container_texture.region = Rect2(0, ((row - roof_row + building_index) % 2) * TILE_SIZE.y, TILE_SIZE.x * 4, TILE_SIZE.y)
+			var container: Sprite2D = Sprite2D.new()
+			container.name = "ShippingContainer_%d_%d" % [building_index, row]
+			container.texture = container_texture
+			container.centered = false
+			container.position = Vector2(start_x * TILE_SIZE.x, row * TILE_SIZE.y)
+			container.z_index = 1
+			add_child(container)
 	_debug_player_spawn = Vector2(3.5 * TILE_SIZE.x, floor_row * TILE_SIZE.y - 22.0)
 	_monster_spawns = [
 		_ground_spawn(building_columns[0] + 1.5, floor_row - 5),
@@ -552,7 +601,7 @@ func _add_background(color: Color, top_y: float = 0.0) -> void:
 func _add_water_surface_line() -> void:
 	var surface: Polygon2D = Polygon2D.new()
 	surface.name = "WaterSurface"
-	surface.z_index = -9
+	surface.z_index = 1
 	var world_width: float = map_width_cells * TILE_SIZE.x
 	surface.polygon = PackedVector2Array([
 		Vector2(0.0, water_surface_y - 2.0), Vector2(world_width, water_surface_y - 2.0),

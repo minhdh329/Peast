@@ -55,6 +55,14 @@ func _run() -> void:
 	if not player.is_on_floor():
 		_fail("Player should spawn on the city street.")
 		return
+	if "--capture-screenshots" in OS.get_cmdline_user_args():
+		await RenderingServer.frame_post_draw
+		var screenshot_path: String = OS.get_cache_dir().path_join("peast-city-ground.png")
+		var screenshot_error: Error = root.get_texture().get_image().save_png(screenshot_path)
+		if screenshot_error != OK:
+			_fail("Failed to save city ground screenshot: %s." % error_string(screenshot_error))
+			return
+		print("Screenshot: ", screenshot_path)
 	var monsters: Array[Node] = get_nodes_in_group("monsters")
 	if monsters.size() != 3:
 		_fail("City should spawn three Monsters.")
@@ -244,12 +252,12 @@ func _test_biome_scenery() -> bool:
 			return false
 		if biome_value == ProceduralTerrain.Biome.FOREST:
 			var background: Sprite2D = terrain.get_node("ForestBackground") as Sprite2D
-			if background.texture.resource_path != "res://assets/Gemini_Generated_Image_qwu7kjqwu7kjqwu7.png" or background.z_index >= -6 or background.scale.x <= 0.0 or background.scale.y <= 0.0:
+			if background.texture.resource_path != "res://assets/Gemini_Generated_Image_xqbn43xqbn43xqbn.png" or background.z_index >= -6 or background.scale.x <= 0.0 or background.scale.y <= 0.0:
 				_fail("Forest should use the original image as its full-size background.")
 				return false
 		if biome_value == ProceduralTerrain.Biome.VOLCANO:
 			var background: Sprite2D = terrain.get_node("VolcanoBackground") as Sprite2D
-			if background.texture.resource_path != "res://assets/ABF30583-BCA8-4478-AD4C-F9A178D7BC59.jpeg" or background.z_index >= -6 or not is_equal_approx(background.scale.x, background.scale.y):
+			if background.texture.resource_path != "res://assets/Gemini_Generated_Image_kb05aykb05aykb05.png" or background.z_index >= -6 or not is_equal_approx(background.scale.x, background.scale.y):
 				_fail("Volcano should use the original image as a proportionally scaled background.")
 				return false
 			if terrain.get_child_count() != 2 or terrain.find_child("VolcanoRidges", true, false) != null or terrain.find_child("DistantEmber", true, false) != null:
@@ -258,15 +266,28 @@ func _test_biome_scenery() -> bool:
 		if biome_value == ProceduralTerrain.Biome.OCEAN:
 			var background: Sprite2D = terrain.get_node("OceanBackground") as Sprite2D
 			var horizon_y: float = background.position.y + ProceduralTerrain.OCEAN_BACKGROUND_HORIZON_Y * background.scale.y
-			if background.texture.resource_path != "res://assets/25DDF2A9-E0A9-4B77-8CA1-E589A6FF390B.jpeg" or background.z_index >= -6 or not is_equal_approx(background.scale.x, background.scale.y) or absf(horizon_y - terrain.water_surface_y) > 1.0:
+			if background.texture.resource_path != "res://assets/Gemini_Generated_Image_hvjgphhvjgphhvjg.png" or background.z_index >= -6 or not is_equal_approx(background.scale.x, background.scale.y) or absf(horizon_y - terrain.water_surface_y) > 1.0:
 				_fail("Ocean should use the original image with its horizon aligned to the water surface.")
 				return false
-			if terrain.get_child_count() != 2 or terrain.find_child("OceanIslandsFar", true, false) != null or terrain.find_child("Coral", true, false) != null:
-				_fail("Ocean should not add procedural scenery over its background image.")
+			var background_end: Vector2 = background.position + background.texture.get_size() * background.scale
+			if background.position.y > 1.0 or background_end.x < terrain.map_width_cells * ProceduralTerrain.TILE_SIZE.x - 1.0 or background_end.y < root.get_visible_rect().size.y - 1.0:
+				_fail("Ocean background should cover the map without gaps above or below the water.")
+				return false
+			if terrain.get_child_count() != 4 or terrain.find_child("OceanIslandsFar", true, false) != null or terrain.find_child("Coral", true, false) != null:
+				_fail("Ocean should only add its background, water, surface line and map boundaries.")
+				return false
+			var water: Polygon2D = terrain.get_node("OceanWater") as Polygon2D
+			var surface: Polygon2D = terrain.get_node("WaterSurface") as Polygon2D
+			var water_bounds: Rect2 = Rect2(Vector2(0.0, terrain.water_surface_y), Vector2(terrain.map_width_cells * ProceduralTerrain.TILE_SIZE.x, terrain.floor_row * ProceduralTerrain.TILE_SIZE.y - terrain.water_surface_y))
+			if water.polygon != PackedVector2Array([water_bounds.position, Vector2(water_bounds.end.x, water_bounds.position.y), water_bounds.end, Vector2(0.0, water_bounds.end.y)]) or water.color.a < 0.2 or water.color.a > 0.5 or water.z_index != 1:
+				_fail("Visible translucent ocean water should cover the swimming area down to the seabed, behind characters.")
+				return false
+			if surface.z_index != 1 or surface.color.a <= 0.0 or not is_equal_approx((surface.polygon[0].y + surface.polygon[2].y) * 0.5, terrain.water_surface_y):
+				_fail("The visible ocean surface should match the swimming threshold.")
 				return false
 		if biome_value == ProceduralTerrain.Biome.SKY_ISLANDS:
 			var background: Sprite2D = terrain.get_node("SkyBackground") as Sprite2D
-			if background.texture.resource_path != "res://assets/(n) 2.png" or background.z_index >= -6 or not is_equal_approx(background.scale.x, background.scale.y):
+			if background.texture.resource_path != "res://assets/Gemini_Generated_Image_yivuqtyivuqtyivu.png" or background.z_index >= -6 or not is_equal_approx(background.scale.x, background.scale.y):
 				_fail("Sky Islands should use the original image, proportionally scaled behind gameplay.")
 				return false
 			if terrain.get_child_count() != 2 or terrain.find_child("SceneryCloud", true, false) != null or terrain.find_child("SkyIslandsFar", true, false) != null:
@@ -274,11 +295,26 @@ func _test_biome_scenery() -> bool:
 				return false
 		if biome_value == ProceduralTerrain.Biome.CITY:
 			var background: Sprite2D = terrain.get_node("CityBackground") as Sprite2D
-			if background.texture.resource_path != "res://assets/c86a3be5-cbc3-4d74-8f0b-f4070d9e3eef.jpg" or background.z_index >= -6 or not is_equal_approx(background.scale.x, background.scale.y):
+			if background.texture.resource_path != "res://assets/8cef7e8f-0044-401f-b9d8-3c54311be11e.jpg" or background.z_index >= -6 or not is_equal_approx(background.scale.x, background.scale.y):
 				_fail("City should use the original image, proportionally scaled behind gameplay.")
 				return false
-			if terrain.get_child_count() != 2 or terrain.find_child("StreetLamp", true, false) != null or terrain.find_child("OverheadWire", true, false) != null:
-				_fail("City should not add procedural scenery over its background image.")
+			var containers: int = 0
+			for child: Node in terrain.get_children():
+				if not str(child.name).begins_with("ShippingContainer_"):
+					continue
+				containers += 1
+				var container: Sprite2D = child as Sprite2D
+				var texture: AtlasTexture = container.texture as AtlasTexture
+				if texture == null or texture.atlas != ProceduralTerrain.CITY_CONTAINERS or texture.get_size() != Vector2(128, 32) or container.z_index != 1:
+					_fail("City blocks should display full-width shipping containers behind characters.")
+					return false
+				for column: int in range(4):
+					var cell: Vector2i = Vector2i(container.position / Vector2(terrain.TILE_SIZE)) + Vector2i(column, 0)
+					if terrain.get_cell_source_id(cell) != 0 or terrain.get_cell_alternative_tile(cell) != 0:
+						_fail("Container artwork must align with the existing solid block collisions.")
+						return false
+			if containers != 7 or terrain.get_child_count() != containers + 2:
+				_fail("City should cover all seven solid block rows with stacked shipping containers.")
 				return false
 		if biome_value == ProceduralTerrain.Biome.SKY_ISLANDS and not await _test_sky_layout(terrain):
 			return false
@@ -325,21 +361,59 @@ func _test_volcano_mountain(terrain: ProceduralTerrain) -> bool:
 func _test_thin_platform_tiles(terrain: ProceduralTerrain) -> bool:
 	var atlas: TileSetAtlasSource = terrain.tile_set.get_source(0) as TileSetAtlasSource
 	var image: Image = atlas.texture.get_image()
-	var solid_tile_count: int = 2 if terrain.biome == ProceduralTerrain.Biome.VOLCANO else 1
+	var has_ground_art: bool = terrain.biome in [ProceduralTerrain.Biome.VOLCANO, ProceduralTerrain.Biome.FOREST, ProceduralTerrain.Biome.OCEAN, ProceduralTerrain.Biome.CITY]
+	var solid_tile_count: int = 4 if terrain.biome == ProceduralTerrain.Biome.CITY else (2 if has_ground_art else 1)
+	var is_sky: bool = terrain.biome == ProceduralTerrain.Biome.SKY_ISLANDS
 	for atlas_x: int in range(solid_tile_count):
 		var solid_color: Color = image.get_pixel(atlas_x * ProceduralTerrain.TILE_SIZE.x, 0)
 		var detailed_pixel_count: int = 0
 		for pixel_y: int in range(ProceduralTerrain.TILE_SIZE.y):
 			for pixel_x: int in range(ProceduralTerrain.TILE_SIZE.x):
 				var pixel: Color = image.get_pixel(atlas_x * ProceduralTerrain.TILE_SIZE.x + pixel_x, pixel_y)
-				if pixel.a != 1.0 or (terrain.biome != ProceduralTerrain.Biome.VOLCANO or atlas_x == 0) and pixel != solid_color:
+				if pixel.a != 1.0 or not is_sky and not has_ground_art and pixel != solid_color:
 					_fail("Ground and wall tiles should form opaque seamless solid blocks in every biome.")
 					return false
 				if pixel != solid_color:
 					detailed_pixel_count += 1
-		if terrain.biome == ProceduralTerrain.Biome.VOLCANO and atlas_x == 1 and detailed_pixel_count < 20:
-			_fail("Volcano lava blocks should show molten texture instead of a flat fill.")
+		if terrain.biome == ProceduralTerrain.Biome.VOLCANO and detailed_pixel_count < 100:
+			_fail("Volcano ground should show detailed basalt and glowing lava instead of flat blocks.")
 			return false
+		if is_sky and detailed_pixel_count < 100:
+			_fail("Sky ground should show detailed mossy stone bricks instead of flat blocks.")
+			return false
+		if terrain.biome == ProceduralTerrain.Biome.FOREST and detailed_pixel_count < 100:
+			_fail("Forest ground should show grass, roots, soil and stones instead of flat blocks.")
+			return false
+		if terrain.biome == ProceduralTerrain.Biome.OCEAN and detailed_pixel_count < 100:
+			_fail("Ocean ground should show layered sand, pebbles and shells instead of flat blocks.")
+			return false
+		if terrain.biome == ProceduralTerrain.Biome.CITY and atlas_x >= 2 and detailed_pixel_count < 100:
+			_fail("City ground should show asphalt, road markings and drains instead of flat blocks.")
+			return false
+	if is_sky:
+		for pixel_y: int in range(ProceduralTerrain.TILE_SIZE.y / 2):
+			for pixel_x: int in range(ProceduralTerrain.TILE_SIZE.x):
+				if image.get_pixel(pixel_x, pixel_y) != image.get_pixel(pixel_x, pixel_y + ProceduralTerrain.TILE_SIZE.y):
+					_fail("Sky platforms should use only the top brick row of the ground artwork.")
+					return false
+	if has_ground_art:
+		for cell: Vector2i in terrain.get_used_cells():
+			if cell.y < terrain.floor_row:
+				continue
+			var coords: Vector2i = terrain.get_cell_atlas_coords(cell)
+			if coords.y != (0 if cell.y == terrain.floor_row else 2):
+				_fail("Ground should use surface art above buried soil or basalt tiles.")
+				return false
+			if terrain.biome in [ProceduralTerrain.Biome.FOREST, ProceduralTerrain.Biome.OCEAN] and coords.x != cell.x % 2:
+				_fail("Forest and Ocean ground should alternate their two ground variants.")
+				return false
+			if terrain.biome == ProceduralTerrain.Biome.CITY and coords.x != 2 + cell.x % 2:
+				_fail("City streets should alternate dedicated road and utility tiles without replacing building tiles.")
+				return false
+			var ground_data: TileData = terrain.get_cell_tile_data(cell)
+			if ground_data.get_collision_polygons_count(0) != 1 or ground_data.is_collision_polygon_one_way(0, 0):
+				_fail("Redesigned ground must retain solid collisions.")
+				return false
 	for cell: Vector2i in terrain.get_used_cells():
 		if terrain.get_cell_alternative_tile(cell) != ProceduralTerrain.PLATFORM_ALTERNATIVE:
 			continue
@@ -358,7 +432,8 @@ func _test_thin_platform_tiles(terrain: ProceduralTerrain) -> bool:
 				if image.get_pixel(tile_origin.x + pixel_x, tile_origin.y + pixel_y).a != 1.0:
 					_fail("Thin platform surfaces should remain visible and opaque, including Ocean and Sky.")
 					return false
-		for pixel_y: int in range(ProceduralTerrain.PLATFORM_THICKNESS, ProceduralTerrain.TILE_SIZE.y):
+		var visual_height: int = ProceduralTerrain.TILE_SIZE.y / 2 if is_sky else ProceduralTerrain.PLATFORM_THICKNESS
+		for pixel_y: int in range(visual_height, ProceduralTerrain.TILE_SIZE.y):
 			for pixel_x: int in range(ProceduralTerrain.TILE_SIZE.x):
 				if image.get_pixel(tile_origin.x + pixel_x, tile_origin.y + pixel_y).a != 0.0:
 					_fail("The space below each thin platform must be transparent.")

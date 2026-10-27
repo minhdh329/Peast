@@ -1,23 +1,36 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/arena_manager.gd" id="1_arena_manager"]
+[ext_resource type="Texture2D" path="res://assets/Gemini_Generated_Image_hkpyxthkpyxthkpy.png" id="2_background"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_arena_floor"]
 size = Vector2(960, 64)
 
-[node name="ArenaTest" type="Node2D"]
+[node name="ArenaMap" type="Node2D"]
 
-[node name="Background" type="Polygon2D" parent="."]
+[node name="BackgroundLayer" type="CanvasLayer" parent="."]
+layer = -1
+
+[node name="Background" type="TextureRect" parent="BackgroundLayer"]
 z_index = -20
-polygon = PackedVector2Array(0, 0, 960, 0, 960, 540, 0, 540)
-color = Color(0.075, 0.12, 0.16, 1)
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("2_background")
+expand_mode = 1
+stretch_mode = 6
 
 [node name="CenterLine" type="Polygon2D" parent="."]
+visible = false
 z_index = -10
 polygon = PackedVector2Array(478, 60, 482, 60, 482, 448, 478, 448)
 color = Color(0.25, 0.55, 0.62, 0.45)
 
 [node name="FloorVisual" type="Polygon2D" parent="."]
+visible = false
 polygon = PackedVector2Array(0, 448, 960, 448, 960, 540, 0, 540)
 color = Color(0.14, 0.28, 0.25, 1)
 
@@ -29,3 +42,17 @@ shape = SubResource("RectangleShape2D_arena_floor")
 
 [node name="ArenaManager" type="Node2D" parent="."]
 script = ExtResource("1_arena_manager")
+
+[node name="MapUI" type="CanvasLayer" parent="."]
+
+[node name="MapName" type="Label" parent="MapUI"]
+offset_left = 16.0
+offset_top = 12.0
+offset_right = 200.0
+offset_bottom = 48.0
+mouse_filter = 2
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.85)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 24
+text = "Đấu trường"
